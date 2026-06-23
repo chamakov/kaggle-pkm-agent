@@ -26,15 +26,33 @@ def train_model():
         # For this skeleton, we show standard PPO logic.
         model = PPO("MultiInputPolicy", env, verbose=1)
         
+        from stable_baselines3.common.callbacks import EvalCallback
+        
+        # Entorno separado exclusivo para las evaluaciones
+        eval_env = CabtGymEnv(opponent_agent="random")
+        
+        # Cada 10,000 pasos jugará 5 partidas en el eval_env.
+        # Si obtiene una recompensa promedio mejor que el récord anterior, lo guarda en ./best_models/
+        eval_callback = EvalCallback(
+            eval_env,
+            best_model_save_path='./best_models/',
+            log_path='./results/',
+            eval_freq=10000,
+            deterministic=True,
+            render=False,
+            n_eval_episodes=5
+        )
+        
         print("Empezando el entrenamiento...")
         try:
-            print("Entrenando... presiona Stop (⏹️) en Colab para pausar y guardar el modelo.")
-            model.learn(total_timesteps=1000000000)
+            print("Entrenando... presiona Stop (⏹️) en Colab para pausar.")
+            print("El mejor modelo se guardará automáticamente en la carpeta 'best_models'.")
+            model.learn(total_timesteps=1000000000, callback=eval_callback)
         except KeyboardInterrupt:
             print("\nEntrenamiento detenido manualmente por el usuario.")
         finally:
-            model.save("ppo_cabt_model")
-            print("Modelo guardado exitosamente en ppo_cabt_model.zip")
+            model.save("ppo_cabt_model_final")
+            print("Último modelo (puede no ser el mejor) guardado en ppo_cabt_model_final.zip")
     else:
         print("StableBaselines3 no detectado. Modo Dummy:")
         obs, info = env.reset()
