@@ -27,10 +27,14 @@ def train_model():
         model = PPO("MultiInputPolicy", env, verbose=1)
         
         print("Empezando el entrenamiento...")
-        model.learn(total_timesteps=10000)
-        
-        model.save("ppo_cabt_model")
-        print("Modelo guardado en ppo_cabt_model.zip")
+        try:
+            print("Entrenando... presiona Stop (⏹️) en Colab para pausar y guardar el modelo.")
+            model.learn(total_timesteps=1000000000)
+        except KeyboardInterrupt:
+            print("\nEntrenamiento detenido manualmente por el usuario.")
+        finally:
+            model.save("ppo_cabt_model")
+            print("Modelo guardado exitosamente en ppo_cabt_model.zip")
     else:
         print("StableBaselines3 no detectado. Modo Dummy:")
         obs, info = env.reset()
