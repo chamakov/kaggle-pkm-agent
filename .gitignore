@@ -1,0 +1,13 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+*.json
+!cabt.json
+replay*.json
+scratch/
+*.log
+
+# Large PDF files
+resources/cards-things/*.pdf

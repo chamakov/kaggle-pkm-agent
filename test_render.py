@@ -1,0 +1,34 @@
+from kaggle_environments import make
+
+deck2 = [
+    5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+    9, 9,
+    77, 77, 77, 77,
+    156, 156, 156, 156,
+    157, 157, 157, 157,
+    331, 331, 331, 331,
+    408, 408, 408, 408,
+    474, 474, 474, 474,
+    528, 528, 528, 528,
+    530, 530, 530, 530,
+    532,
+    554, 554, 554,
+    576, 576, 576, 576,
+    585, 585, 585, 585,
+    630, 630, 630, 630,
+]
+
+def agent(obs, conf):
+    if obs.get("select") is None: return deck2
+    return [0]
+
+def main():
+    env = make("cabt")
+    env.run([agent, agent])
+    html_out = env.render(mode="html")
+    with open("replay.html", "w") as f:
+        f.write(html_out)
+    print("Successfully generated replay.html")
+
+if __name__ == "__main__":
+    main()
