@@ -40,7 +40,8 @@ def train_model():
             eval_freq=10000,
             deterministic=True,
             render=False,
-            n_eval_episodes=5
+            n_eval_episodes=5,
+            verbose=1
         )
         
         print("Empezando el entrenamiento...")
