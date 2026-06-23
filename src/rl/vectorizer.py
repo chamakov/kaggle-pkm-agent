@@ -7,24 +7,40 @@ MAX_CARD_ID = 1300  # Added padding above 1267 just in case
 
 def get_pokemon_stats(pokemon_obj):
     """Extrae el ID y estadísticas de un Pokémon de cg.api.Pokemon o diccionario"""
+    # Retorna: cid, hp, energies_count, retreat_cost, e1, e2, e3, e4
     if pokemon_obj is None:
-        return 0, 0.0, 0.0
+        return 0, 0.0, 0.0, 0.0, 0, 0, 0, 0
     
-    # Manejar caso de que sea un objeto de la API (en el entorno)
     if hasattr(pokemon_obj, 'id'):
-        cid = pokemon_obj.id + 1  # 1-indexed, 0 is empty
+        cid = pokemon_obj.id + 1
         hp = float(pokemon_obj.hp)
-        energies = float(len(getattr(pokemon_obj, 'energyCards', [])))
-        return cid, hp, energies
+        en_cards = getattr(pokemon_obj, 'energyCards', [])
+        energies_count = float(len(en_cards))
+        retreat_cost = float(getattr(pokemon_obj, 'retreatCost', 0))
+        
+        e_ids = [0, 0, 0, 0]
+        for idx, e in enumerate(en_cards[:4]):
+            e_ids[idx] = e.id + 1 if hasattr(e, 'id') else 0
+            
+        return cid, hp, energies_count, retreat_cost, e_ids[0], e_ids[1], e_ids[2], e_ids[3]
     
-    # Manejar caso de diccionario en crudo
     if isinstance(pokemon_obj, dict):
         cid = pokemon_obj.get('id', -1) + 1
         hp = float(pokemon_obj.get('hp', 0))
-        energies = float(len(pokemon_obj.get('energyCards', [])))
-        return cid, hp, energies
+        en_cards = pokemon_obj.get('energyCards', [])
+        energies_count = float(len(en_cards))
+        retreat_cost = float(pokemon_obj.get('retreatCost', 0))
         
-    return 0, 0.0, 0.0
+        e_ids = [0, 0, 0, 0]
+        for idx, e in enumerate(en_cards[:4]):
+            if isinstance(e, dict):
+                e_ids[idx] = e.get('id', -1) + 1
+            else:
+                e_ids[idx] = e.id + 1 if hasattr(e, 'id') else 0
+                
+        return cid, hp, energies_count, retreat_cost, e_ids[0], e_ids[1], e_ids[2], e_ids[3]
+        
+    return 0, 0.0, 0.0, 0.0, 0, 0, 0, 0
 
 def vectorize_state(obs_dict, my_index):
     """
@@ -51,15 +67,15 @@ def vectorize_state(obs_dict, my_index):
     scalars = []
     
     # My Active
-    active_id, active_hp, active_energy = get_pokemon_stats(my_state.active[0] if my_state.active else None)
-    card_ids.append(active_id)
-    scalars.extend([active_hp, active_energy])
+    active_id, active_hp, active_energy, active_rc, ae1, ae2, ae3, ae4 = get_pokemon_stats(my_state.active[0] if my_state.active else None)
+    card_ids.extend([active_id, ae1, ae2, ae3, ae4])
+    scalars.extend([active_hp, active_energy, active_rc])
     
     # My Bench
     for i in range(MAX_BENCH_SIZE):
-        b_id, b_hp, b_en = get_pokemon_stats(my_state.bench[i] if i < len(my_state.bench) else None)
-        card_ids.append(b_id)
-        scalars.extend([b_hp, b_en])
+        b_id, b_hp, b_en, b_rc, be1, be2, be3, be4 = get_pokemon_stats(my_state.bench[i] if i < len(my_state.bench) else None)
+        card_ids.extend([b_id, be1, be2, be3, be4])
+        scalars.extend([b_hp, b_en, b_rc])
         
     # My Hand
     for i in range(MAX_HAND_SIZE):
@@ -71,15 +87,15 @@ def vectorize_state(obs_dict, my_index):
             card_ids.append(0)
             
     # Opp Active
-    opp_act_id, opp_act_hp, opp_act_en = get_pokemon_stats(opp_state.active[0] if opp_state.active else None)
-    card_ids.append(opp_act_id)
-    scalars.extend([opp_act_hp, opp_act_en])
+    opp_act_id, opp_act_hp, opp_act_en, opp_act_rc, oae1, oae2, oae3, oae4 = get_pokemon_stats(opp_state.active[0] if opp_state.active else None)
+    card_ids.extend([opp_act_id, oae1, oae2, oae3, oae4])
+    scalars.extend([opp_act_hp, opp_act_en, opp_act_rc])
     
     # Opp Bench
     for i in range(MAX_BENCH_SIZE):
-        b_id, b_hp, b_en = get_pokemon_stats(opp_state.bench[i] if i < len(opp_state.bench) else None)
-        card_ids.append(b_id)
-        scalars.extend([b_hp, b_en])
+        b_id, b_hp, b_en, b_rc, be1, be2, be3, be4 = get_pokemon_stats(opp_state.bench[i] if i < len(opp_state.bench) else None)
+        card_ids.extend([b_id, be1, be2, be3, be4])
+        scalars.extend([b_hp, b_en, b_rc])
         
     # Variables globales
     scalars.append(float(len(my_state.prize)))
@@ -93,9 +109,34 @@ def vectorize_state(obs_dict, my_index):
     num_options = len(options)
     
     if num_options > 0:
-        # Habilitar los índices válidos
-        for i in range(min(num_options, MAX_OPTIONS)):
-            action_mask[i] = 1
+        # Load ComboSequencer for heuristic masking
+        try:
+            from src.agent.synergy_analyzer import ComboSequencer
+            sequencer = ComboSequencer()
+            
+            # Create a mock state to pass to sequencer
+            class MockState:
+                def __init__(self, obs):
+                    self.observation = obs
+            mock_state = MockState(obs_dict)
+            
+            # Score each action and mask bad ones
+            scores = []
+            for i in range(num_options):
+                score = sequencer.evaluate_synergy(i, mock_state)
+                scores.append(score)
+                
+            max_score = max(scores) if scores else 0
+            
+            # Habilitar índices válidos que pasen el filtro heurístico
+            for i in range(min(num_options, MAX_OPTIONS)):
+                # Permitir siempre la mejor acción (para no quedar bloqueados) o aquellas que no sean terriblemente malas (-5.0)
+                if scores[i] >= -5.0 or scores[i] == max_score:
+                    action_mask[i] = 1
+        except ImportError:
+            # Fallback si no está disponible la heurística
+            for i in range(min(num_options, MAX_OPTIONS)):
+                action_mask[i] = 1
     else:
         # Si no hay opciones, permitimos la acción 0 para pasar
         action_mask[0] = 1

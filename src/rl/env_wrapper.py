@@ -25,8 +25,8 @@ class CabtGymEnv(gym.Env):
             self.opponent_agent = opponent_agent
             
         self.observation_space = spaces.Dict({
-            "card_ids": spaces.MultiDiscrete([1300] * 42),
-            "scalars": spaces.Box(low=-1000, high=1000, shape=(28,), dtype=np.float32),
+            "card_ids": spaces.MultiDiscrete([1300] * 90),
+            "scalars": spaces.Box(low=-1000, high=1000, shape=(40,), dtype=np.float32),
             "action_mask": spaces.Box(low=0, high=1, shape=(MAX_OPTIONS,), dtype=np.int8)
         })
         
@@ -155,8 +155,37 @@ class CabtGymEnv(gym.Env):
         # Check if the game is done
         done = self.env.done
         
+        # Obtain the selected action object to shape rewards
+        last_obs = self._get_obs_dict(self._last_state)
+        options = last_obs.get('select', {}).get('option', [])
+        action_obj = options[int(action)] if options and int(action) < len(options) else {}
+        action_type = action_obj.get('type')
+        
+        intermediate_reward = 0.0
+        if action_type == 9: # ACTION_ATTACH_ENERGY
+            intermediate_reward += 0.5
+        elif action_type == 10: # ACTION_EVOLVE
+            intermediate_reward += 2.0
+        elif action_type == 13: # ACTION_ATTACK
+            intermediate_reward += 1.0
+        elif action_type == 12: # ACTION_END_TURN
+            intermediate_reward -= 0.5
+            
         # Reward
-        reward = state[self.my_index].reward if state[self.my_index].reward is not None else 0.0
+        final_reward = state[self.my_index].reward if state[self.my_index].reward is not None else 0.0
+        
+        # We cap intermediate rewards if the game is done to prioritize the Win/Loss signal (+1/-1)
+        # But wait, Kaggle returns 1.0 for win, -1.0 for loss. If intermediate reward dominates, 
+        # it might not care about winning. We scale intermediate rewards so they are much smaller than a Win.
+        # Actually, let's just add it. The discount factor (gamma=0.99) will carry the win signal back.
+        # For PPO, a win of +10 is better than +1 if intermediate rewards are like +1.
+        if done:
+            if final_reward > 0:
+                final_reward = 10.0 # Amplificar la victoria para sobrepasar cualquier intermediate reward
+            elif final_reward < 0:
+                final_reward = -10.0 # Amplificar la derrota
+                
+        reward = final_reward + intermediate_reward
         
         if not done:
             state = self._fast_forward(state)
