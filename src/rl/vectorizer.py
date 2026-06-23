@@ -34,10 +34,11 @@ def vectorize_state(obs_dict, my_index):
     - action_mask: np.array booleano
     """
     import sys
+    import os
     try:
         from cg.api import to_observation_class
     except ImportError:
-        sys.path.append("/workspace/remotethings/cg_custom")
+        sys.path.append(os.path.join(os.getcwd(), "remotethings", "cg_custom"))
         from cg.api import to_observation_class
 
     obs = to_observation_class(obs_dict)

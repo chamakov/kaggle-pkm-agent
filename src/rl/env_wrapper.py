@@ -4,10 +4,11 @@ import numpy as np
 from kaggle_environments import make
 
 import sys
+import os
 try:
     from src.rl.vectorizer import vectorize_state, MAX_OPTIONS
 except ImportError:
-    sys.path.append("/workspace")
+    sys.path.append(os.getcwd())
     from src.rl.vectorizer import vectorize_state, MAX_OPTIONS
 
 class CabtGymEnv(gym.Env):
