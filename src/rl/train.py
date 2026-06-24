@@ -68,7 +68,9 @@ def train_model():
         model.set_logger(new_logger)
         
         # Entorno separado exclusivo para las evaluaciones
+        from stable_baselines3.common.monitor import Monitor
         eval_env = CabtGymEnv()
+        eval_env = Monitor(eval_env)
         
         # Usamos MaskableEvalCallback para evaluar correctamente el modelo con la máscara
         eval_callback = MaskableEvalCallback(
