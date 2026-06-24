@@ -13,16 +13,23 @@ try:
     has_sb3 = True
 except ImportError:
     has_sb3 = False
-# Attempt to mount Google Drive if running in Colab
-try:
-    import google.colab
-    from google.colab import drive
-    drive.mount('/content/drive')
-    base_save_dir = "/content/drive/MyDrive/PokemonAgentPPO"
-    print(f"Colab detectado. Guardando datos en: {base_save_dir}")
-except ImportError:
-    base_save_dir = "."
-    print("Entorno local detectado. Guardando datos localmente.")
+# Detectar el entorno de ejecución para guardar los modelos
+if 'KAGGLE_KERNEL_RUN_TYPE' in os.environ or os.path.exists('/kaggle/working'):
+    # Entorno de Kaggle Notebook
+    base_save_dir = "/kaggle/working/PokemonAgentPPO"
+    print(f"Kaggle Notebook detectado. Guardando datos en: {base_save_dir}")
+else:
+    # Intentar montar Google Drive si está en Colab
+    try:
+        import google.colab
+        from google.colab import drive
+        drive.mount('/content/drive')
+        base_save_dir = "/content/drive/MyDrive/PokemonAgentPPO"
+        print(f"Colab detectado. Guardando datos en: {base_save_dir}")
+    except ImportError:
+        # Entorno local
+        base_save_dir = "."
+        print("Entorno local detectado. Guardando datos localmente.")
 
 def train_model():
     print("Inicializando entorno de entrenamiento vs Random...")
