@@ -6,9 +6,10 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")
 
 from src.rl.env_wrapper import CabtGymEnv
 
-# Intentar importar SB3, si no está instalado, será solo un skeleton
+# Intentar importar sb3-contrib (requerido para MaskablePPO)
 try:
-    from stable_baselines3 import PPO
+    from sb3_contrib import MaskablePPO
+    from sb3_contrib.common.maskable.callbacks import MaskableEvalCallback
     has_sb3 = True
 except ImportError:
     has_sb3 = False
@@ -43,21 +44,27 @@ def train_model():
         os.makedirs(tensorboard_dir, exist_ok=True)
         os.makedirs(results_dir, exist_ok=True)
         
-        model = PPO("MultiInputPolicy", env, verbose=1, tensorboard_log=tensorboard_dir)
+        # Tuning hyperparameters for TCG
+        model = MaskablePPO(
+            "MultiInputPolicy", 
+            env, 
+            verbose=1, 
+            tensorboard_log=tensorboard_dir,
+            n_steps=2048,           # Más pasos para capturar partidas largas
+            batch_size=256,         # Batch size más grande
+            ent_coef=0.01           # Fomentar exploración (prevenir que solo pase el turno)
+        )
         
         # Configurar el logger para exportar las métricas a un archivo progress.csv
         from stable_baselines3.common.logger import configure
         new_logger = configure(results_dir, ["stdout", "csv", "tensorboard"])
         model.set_logger(new_logger)
         
-        from stable_baselines3.common.callbacks import EvalCallback
-        
         # Entorno separado exclusivo para las evaluaciones
-        eval_env = CabtGymEnv(opponent_agent="random")
+        eval_env = CabtGymEnv()
         
-        # Cada 10,000 pasos jugará 5 partidas en el eval_env.
-        # Si obtiene una recompensa promedio mejor que el récord anterior, lo guarda en ./best_models/
-        eval_callback = EvalCallback(
+        # Usamos MaskableEvalCallback para evaluar correctamente el modelo con la máscara
+        eval_callback = MaskableEvalCallback(
             eval_env,
             best_model_save_path=best_model_dir,
             log_path=results_dir,

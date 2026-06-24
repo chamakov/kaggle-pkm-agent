@@ -18,17 +18,35 @@ class CabtGymEnv(gym.Env):
         self.my_index = my_index
         self.opp_index = 1 - my_index
         
-        # We can pass the path to slowking_agent.py here
-        if opponent_agent is None:
-            self.opponent_agent = "random"
-        else:
-            self.opponent_agent = opponent_agent
+        # Load Opponent Agents
+        self.opponent_agents = {}
+        
+        # Heuristic Agent (Phase 1)
+        try:
+            from src.agent.agent import agent_fn as heuristic_fn
+            self.opponent_agents["heuristic"] = heuristic_fn
+        except ImportError:
+            self.opponent_agents["heuristic"] = None
+            
+        # Lucario Agent
+        try:
+            # sys.path is already modified to include cwd
+            from scratch.lucario_agent import agent_fn as lucario_fn
+            self.opponent_agents["lucario"] = lucario_fn
+        except ImportError:
+            self.opponent_agents["lucario"] = None
+            
+        # Random Agent (Fallback)
+        self.opponent_agents["random"] = "random"
+        
+        self.current_opponent_type = "random"
             
         self.observation_space = spaces.Dict({
             "card_ids": spaces.MultiDiscrete([1300] * 90),
-            "scalars": spaces.Box(low=-1000, high=1000, shape=(40,), dtype=np.float32),
-            "action_mask": spaces.Box(low=0, high=1, shape=(MAX_OPTIONS,), dtype=np.int8)
+            "scalars": spaces.Box(low=-1000, high=1000, shape=(40,), dtype=np.float32)
         })
+        
+        self.current_action_mask = np.ones(MAX_OPTIONS, dtype=np.int8)
         
         self.action_space = spaces.Discrete(MAX_OPTIONS)
         self.runner = None
@@ -64,6 +82,10 @@ class CabtGymEnv(gym.Env):
             9, 9, 9                  # Boomerang Energy
         ]
         
+    def action_masks(self) -> np.ndarray:
+        """Required by sb3-contrib MaskablePPO to fetch valid actions."""
+        return self.current_action_mask
+        
     def _get_obs_dict(self, state):
         return state[self.my_index].observation
         
@@ -78,6 +100,16 @@ class CabtGymEnv(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         
+        # Select Opponent for this episode randomly
+        import random
+        available_opponents = [k for k, v in self.opponent_agents.items() if v is not None]
+        if available_opponents:
+            self.current_opponent_type = random.choice(available_opponents)
+        else:
+            self.current_opponent_type = "random"
+            
+        print(f"[{self.my_index}] Nuevo Episodio. Entrenando contra: {self.current_opponent_type}")
+        
         # We run env.reset() which initializes the state
         state = self.env.reset(num_agents=2)
         
@@ -90,6 +122,7 @@ class CabtGymEnv(gym.Env):
         self._last_state = state
         
         vec = vectorize_state(self._get_obs_dict(state), self.my_index)
+        self.current_action_mask = vec.pop("action_mask")
         return vec, {}
         
     def _fast_forward(self, state):
@@ -103,10 +136,22 @@ class CabtGymEnv(gym.Env):
             opp_opts = opp_obs.get('select', {})
             
             if opp_opts and len(opp_opts.get('option', [])) > 0:
-                # Get action from opponent agent (random for now)
-                # If we had a real agent, we would load it and call it
-                import random
-                opp_action = [random.randint(0, len(opp_opts['option'])-1)]
+                agent_fn = self.opponent_agents.get(self.current_opponent_type)
+                
+                if callable(agent_fn):
+                    # Opponent is a real agent
+                    # Wrap the state correctly for the agent
+                    try:
+                        actions_returned = agent_fn(opp_obs, None)
+                        opp_action = actions_returned if isinstance(actions_returned, list) else [actions_returned]
+                    except Exception as e:
+                        # Fallback if agent crashes
+                        import random
+                        opp_action = [random.randint(0, len(opp_opts['option'])-1)]
+                else:
+                    # Opponent is Random
+                    import random
+                    opp_action = [random.randint(0, len(opp_opts['option'])-1)]
             else:
                 opp_action = []
                 
@@ -122,27 +167,37 @@ class CabtGymEnv(gym.Env):
         my_action = [int(action)]
         
         # Check if the action is valid using the action mask
-        # If it is invalid, we do NOT pass it to the environment (which would crash/terminate it),
-        # but instead we return a negative reward immediately and keep the same state.
+        # Since we use MaskablePPO, invalid actions are never sampled by the policy!
+        # But we double check just in case (e.g. if a random fallback occurs).
         is_valid = False
         if self._last_state is not None:
-            vec = vectorize_state(self._get_obs_dict(self._last_state), self.my_index)
-            if vec["action_mask"][int(action)] == 1:
+            if self.current_action_mask[int(action)] == 1:
                 is_valid = True
                 
         if not is_valid:
-            # Castigo por hacer una acción ilegal, no avanzamos el entorno
-            reward = -10.0
-            vec = vectorize_state(self._get_obs_dict(self._last_state), self.my_index)
-            done = False
-            return vec, reward, done, False, {"invalid_action": True}
+            # Fallback to passing turn or first valid option if MaskablePPO somehow fails
+            valid_indices = [i for i, m in enumerate(self.current_action_mask) if m == 1]
+            if valid_indices:
+                my_action = [valid_indices[0]]
+            else:
+                my_action = [0]
         
         opp_obs = self._last_state[self.opp_index].observation
         opp_opts = opp_obs.get('select', {})
         
         if opp_opts and len(opp_opts.get('option', [])) > 0:
-            import random
-            opp_action = [random.randint(0, len(opp_opts['option'])-1)]
+            agent_fn = self.opponent_agents.get(self.current_opponent_type)
+            
+            if callable(agent_fn):
+                try:
+                    actions_returned = agent_fn(opp_obs, None)
+                    opp_action = actions_returned if isinstance(actions_returned, list) else [actions_returned]
+                except Exception as e:
+                    import random
+                    opp_action = [random.randint(0, len(opp_opts['option'])-1)]
+            else:
+                import random
+                opp_action = [random.randint(0, len(opp_opts['option'])-1)]
         else:
             opp_action = []
             
@@ -194,5 +249,6 @@ class CabtGymEnv(gym.Env):
             
         self._last_state = state
         vec = vectorize_state(self._get_obs_dict(state), self.my_index)
+        self.current_action_mask = vec.pop("action_mask")
         
         return vec, float(reward), done, False, {}
