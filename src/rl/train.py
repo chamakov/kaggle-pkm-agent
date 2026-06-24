@@ -82,7 +82,7 @@ def train_model():
         os.makedirs(checkpoint_dir, exist_ok=True)
         
         checkpoint_callback = CheckpointCallback(
-            save_freq=50000,  # Guardar cada 50,000 pasos
+            save_freq=51200,  # 2048 * 25 (Múltiplo exacto de n_steps para guardar justo tras una actualización)
             save_path=checkpoint_dir,
             name_prefix="ppo_cabt_model"
         )
