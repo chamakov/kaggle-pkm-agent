@@ -75,11 +75,26 @@ def train_model():
             verbose=1
         )
         
+        # Callback para guardar checkpoints cada N pasos
+        from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
+        
+        checkpoint_dir = os.path.join(base_save_dir, "checkpoints")
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        
+        checkpoint_callback = CheckpointCallback(
+            save_freq=50000,  # Guardar cada 50,000 pasos
+            save_path=checkpoint_dir,
+            name_prefix="ppo_cabt_model"
+        )
+        
+        # Agrupar los callbacks
+        callbacks = CallbackList([eval_callback, checkpoint_callback])
+        
         print("Empezando el entrenamiento...")
         try:
             print("Entrenando... presiona Stop (⏹️) en Colab para pausar.")
             print("El mejor modelo se guardará automáticamente en la carpeta 'best_models'.")
-            model.learn(total_timesteps=1000000000, callback=eval_callback)
+            model.learn(total_timesteps=1000000000, callback=callbacks)
         except KeyboardInterrupt:
             print("\nEntrenamiento detenido manualmente por el usuario.")
         finally:
