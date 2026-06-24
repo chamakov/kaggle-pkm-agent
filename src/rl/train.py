@@ -12,6 +12,16 @@ try:
     has_sb3 = True
 except ImportError:
     has_sb3 = False
+# Attempt to mount Google Drive if running in Colab
+try:
+    import google.colab
+    from google.colab import drive
+    drive.mount('/content/drive')
+    base_save_dir = "/content/drive/MyDrive/PokemonAgentPPO"
+    print(f"Colab detectado. Guardando datos en: {base_save_dir}")
+except ImportError:
+    base_save_dir = "."
+    print("Entorno local detectado. Guardando datos localmente.")
 
 def train_model():
     print("Inicializando entorno de entrenamiento vs Random...")
@@ -24,7 +34,21 @@ def train_model():
         # SB3 natively doesn't support action masks without sb3-contrib (MaskablePPO)
         # But we can either use sb3-contrib or apply a penalty. 
         # For this skeleton, we show standard PPO logic.
-        model = PPO("MultiInputPolicy", env, verbose=1)
+        # Directorios de guardado
+        best_model_dir = os.path.join(base_save_dir, "best_models")
+        tensorboard_dir = os.path.join(base_save_dir, "tensorboard_logs")
+        results_dir = os.path.join(base_save_dir, "results")
+        
+        os.makedirs(best_model_dir, exist_ok=True)
+        os.makedirs(tensorboard_dir, exist_ok=True)
+        os.makedirs(results_dir, exist_ok=True)
+        
+        model = PPO("MultiInputPolicy", env, verbose=1, tensorboard_log=tensorboard_dir)
+        
+        # Configurar el logger para exportar las métricas a un archivo progress.csv
+        from stable_baselines3.common.logger import configure
+        new_logger = configure(results_dir, ["stdout", "csv", "tensorboard"])
+        model.set_logger(new_logger)
         
         from stable_baselines3.common.callbacks import EvalCallback
         
@@ -35,8 +59,8 @@ def train_model():
         # Si obtiene una recompensa promedio mejor que el récord anterior, lo guarda en ./best_models/
         eval_callback = EvalCallback(
             eval_env,
-            best_model_save_path='./best_models/',
-            log_path='./results/',
+            best_model_save_path=best_model_dir,
+            log_path=results_dir,
             eval_freq=10000,
             deterministic=True,
             render=False,
@@ -52,8 +76,9 @@ def train_model():
         except KeyboardInterrupt:
             print("\nEntrenamiento detenido manualmente por el usuario.")
         finally:
-            model.save("ppo_cabt_model_final")
-            print("Último modelo (puede no ser el mejor) guardado en ppo_cabt_model_final.zip")
+            final_path = os.path.join(base_save_dir, "ppo_cabt_model_final")
+            model.save(final_path)
+            print(f"Último modelo (puede no ser el mejor) guardado en {final_path}.zip")
     else:
         print("StableBaselines3 no detectado. Modo Dummy:")
         obs, info = env.reset()
