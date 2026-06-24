@@ -1,34 +1,63 @@
 import os
-import numpy as np
+import sys
 
-# Skeleton for the kaggle environments agent
-# This will be submitted as the final model wrapper.
+# Cachear el modelo para no recargarlo en cada turno durante el torneo
+_model = None
 
-# In Kaggle environments, the agent is just a function
 def rl_agent(obs_dict, config=None):
-    from src.rl.vectorizer import vectorize_state, MAX_OPTIONS
+    global _model
     
-    # 1. Vectorize the state
-    # (El agente siempre es P1 desde su perspectiva en Kaggle environments)
-    my_index = 0  # To be safe, wait, does kaggle pass my_index in config?
-    # Actually, in CABT obs.current.yourIndex gives us our index, but vectorize_state already handles this implicitly if we pass 0 as we always get our perspective.
-    # Wait! In kaggle_environments, your perspective is always player 1? 
-    # Let's read from the raw obs just in case, but vectorize_state uses to_observation_class.
-    
+    # 1. Carga segura de dependencias (por si falta sb3_contrib en el entorno de evaluación)
+    try:
+        from src.rl.vectorizer import vectorize_state
+        from sb3_contrib import MaskablePPO
+    except ImportError:
+        # Fallback a random si la librería no está instalada
+        import random
+        opts = obs_dict.get('select', {}).get('option', [])
+        return [random.randint(0, max(0, len(opts)-1))] if opts else []
+
+    # 2. Cargar el modelo SOLO en el primer turno de la partida
+    if _model is None:
+        # Busca el mejor checkpoint que el usuario haya puesto junto a este archivo
+        model_name = "ppo_cabt_model_final"
+        model_path = os.path.join(os.path.dirname(__file__), f"{model_name}.zip")
+        
+        if not os.path.exists(model_path):
+            model_path = f"{model_name}.zip" # Intenta en el directorio de ejecución local
+            
+        try:
+            _model = MaskablePPO.load(model_path)
+        except Exception as e:
+            # Fallback en caso de que el usuario no haya subido el zip del modelo
+            print(f"Agent Error: No se pudo cargar {model_path}. Usando Random. ({e})")
+            import random
+            opts = obs_dict.get('select', {}).get('option', [])
+            return [random.randint(0, max(0, len(opts)-1))] if opts else []
+            
+    # 3. Vectorizar el estado
+    # (El agente siempre recibe la perspectiva index 0 en Kaggle)
     vec = vectorize_state(obs_dict, my_index=0)
     
-    # 2. Extract action mask
-    action_mask = vec["action_mask"]
+    # Extraer y remover el action_mask del vector (porque el entorno espera que se pasen por separado a MaskablePPO)
+    action_mask = vec.pop("action_mask", None)
     
-    # 3. Predict with the model
-    # (Dummy random choice from valid options)
-    valid_actions = np.where(action_mask == 1)[0]
+    if action_mask is None:
+        # Fallback de emergencia
+        import random
+        opts = obs_dict.get('select', {}).get('option', [])
+        return [random.randint(0, max(0, len(opts)-1))] if opts else []
     
-    if len(valid_actions) > 0:
-        action = int(np.random.choice(valid_actions))
-    else:
-        action = 0
-        
-    return [action]
+    # 4. Predecir con el Cerebro
+    try:
+        # MaskablePPO necesita las observaciones y la máscara
+        action, _states = _model.predict(vec, action_masks=action_mask, deterministic=True)
+        return [int(action)]
+    except Exception as e:
+        print(f"Agent Error predict: {e}")
+        import random
+        opts = obs_dict.get('select', {}).get('option', [])
+        return [random.randint(0, max(0, len(opts)-1))] if opts else []
 
-# El entorno puede llamar agent = rl_agent
+# Kaggle Environments buscará una función llamada agent_fn o rl_agent
+agent_fn = rl_agent
