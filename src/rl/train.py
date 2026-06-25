@@ -51,15 +51,24 @@ def train_model():
         os.makedirs(tensorboard_dir, exist_ok=True)
         os.makedirs(results_dir, exist_ok=True)
         
+        # Learning rate schedule
+        from typing import Callable
+        def linear_schedule(initial_value: float) -> Callable[[float], float]:
+            def func(progress_remaining: float) -> float:
+                return progress_remaining * initial_value
+            return func
+            
         # Tuning hyperparameters for TCG
         model = MaskablePPO(
             "MultiInputPolicy", 
             env, 
             verbose=1, 
             tensorboard_log=tensorboard_dir,
-            n_steps=2048,           # Más pasos para capturar partidas largas
-            batch_size=256,         # Batch size más grande
-            ent_coef=0.01           # Fomentar exploración (prevenir que solo pase el turno)
+            n_steps=4096,           # Más pasos para capturar partidas largas
+            batch_size=512,         # Batch size más grande
+            learning_rate=linear_schedule(0.0003),
+            ent_coef=0.01,          # Fomentar exploración (prevenir que solo pase el turno)
+            policy_kwargs=dict(net_arch=[256, 256, 256])  # Red más profunda para 52 escalares
         )
         
         # Configurar el logger para exportar las métricas a un archivo progress.csv
