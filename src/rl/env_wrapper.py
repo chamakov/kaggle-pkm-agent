@@ -47,9 +47,14 @@ class CabtGymEnv(gym.Env):
             from src.rl.vectorizer import vectorize_state
             import glob
             
-            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-            best_model_path = os.path.join(base_dir, "kaggleoutputs", "PokemonAgentPPO", "best_models", "best_model.zip")
-            checkpoints_dir = os.path.join(base_dir, "kaggleoutputs", "PokemonAgentPPO", "checkpoints")
+            if 'KAGGLE_KERNEL_RUN_TYPE' in os.environ or os.path.exists('/kaggle/working'):
+                base_save_dir = "/kaggle/working/PokemonAgentPPO"
+            else:
+                base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                base_save_dir = os.path.join(base_dir, "kaggleoutputs", "PokemonAgentPPO")
+                
+            best_model_path = os.path.join(base_save_dir, "best_models", "best_model.zip")
+            checkpoints_dir = os.path.join(base_save_dir, "checkpoints")
             
             chkpt_files = glob.glob(os.path.join(checkpoints_dir, "*.zip"))
             chkpt_files.sort(key=os.path.getmtime, reverse=True)
