@@ -7,9 +7,9 @@ MAX_CARD_ID = 1300  # Added padding above 1267 just in case
 
 def get_pokemon_stats(pokemon_obj):
     """Extrae el ID y estadísticas de un Pokémon de cg.api.Pokemon o diccionario"""
-    # Retorna: cid, hp, energies_count, retreat_cost, e1, e2, e3, e4
+    # Retorna: cid, hp, energies_count, retreat_cost, dmg, e1, e2, e3, e4
     if pokemon_obj is None:
-        return 0, 0.0, 0.0, 0.0, 0, 0, 0, 0
+        return 0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0, 0
     
     if hasattr(pokemon_obj, 'id'):
         cid = pokemon_obj.id + 1
@@ -18,11 +18,18 @@ def get_pokemon_stats(pokemon_obj):
         energies_count = float(len(en_cards))
         retreat_cost = float(getattr(pokemon_obj, 'retreatCost', 0))
         
+        # Extract damage of first attack if available
+        dmg = 0.0
+        attacks = getattr(pokemon_obj, 'attacks', [])
+        if attacks and len(attacks) > 0:
+            first_attack = attacks[0]
+            dmg = float(getattr(first_attack, 'damage', 0))
+            
         e_ids = [0, 0, 0, 0]
         for idx, e in enumerate(en_cards[:4]):
             e_ids[idx] = e.id + 1 if hasattr(e, 'id') else 0
             
-        return cid, hp, energies_count, retreat_cost, e_ids[0], e_ids[1], e_ids[2], e_ids[3]
+        return cid, hp, energies_count, retreat_cost, dmg, e_ids[0], e_ids[1], e_ids[2], e_ids[3]
     
     if isinstance(pokemon_obj, dict):
         cid = pokemon_obj.get('id', -1) + 1
@@ -31,6 +38,16 @@ def get_pokemon_stats(pokemon_obj):
         energies_count = float(len(en_cards))
         retreat_cost = float(pokemon_obj.get('retreatCost', 0))
         
+        # Extract damage of first attack if available
+        dmg = 0.0
+        attacks = pokemon_obj.get('attacks', [])
+        if attacks and len(attacks) > 0:
+            first_attack = attacks[0]
+            if isinstance(first_attack, dict):
+                dmg = float(first_attack.get('damage', 0))
+            else:
+                dmg = float(getattr(first_attack, 'damage', 0))
+                
         e_ids = [0, 0, 0, 0]
         for idx, e in enumerate(en_cards[:4]):
             if isinstance(e, dict):
@@ -38,9 +55,9 @@ def get_pokemon_stats(pokemon_obj):
             else:
                 e_ids[idx] = e.id + 1 if hasattr(e, 'id') else 0
                 
-        return cid, hp, energies_count, retreat_cost, e_ids[0], e_ids[1], e_ids[2], e_ids[3]
+        return cid, hp, energies_count, retreat_cost, dmg, e_ids[0], e_ids[1], e_ids[2], e_ids[3]
         
-    return 0, 0.0, 0.0, 0.0, 0, 0, 0, 0
+    return 0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0, 0
 
 def vectorize_state(obs_dict, my_index):
     """
@@ -67,15 +84,15 @@ def vectorize_state(obs_dict, my_index):
     scalars = []
     
     # My Active
-    active_id, active_hp, active_energy, active_rc, ae1, ae2, ae3, ae4 = get_pokemon_stats(my_state.active[0] if my_state.active else None)
+    active_id, active_hp, active_energy, active_rc, active_dmg, ae1, ae2, ae3, ae4 = get_pokemon_stats(my_state.active[0] if my_state.active else None)
     card_ids.extend([active_id, ae1, ae2, ae3, ae4])
-    scalars.extend([active_hp, active_energy, active_rc])
+    scalars.extend([active_hp, active_energy, active_rc, active_dmg])
     
     # My Bench
     for i in range(MAX_BENCH_SIZE):
-        b_id, b_hp, b_en, b_rc, be1, be2, be3, be4 = get_pokemon_stats(my_state.bench[i] if i < len(my_state.bench) else None)
+        b_id, b_hp, b_en, b_rc, b_dmg, be1, be2, be3, be4 = get_pokemon_stats(my_state.bench[i] if i < len(my_state.bench) else None)
         card_ids.extend([b_id, be1, be2, be3, be4])
-        scalars.extend([b_hp, b_en, b_rc])
+        scalars.extend([b_hp, b_en, b_rc, b_dmg])
         
     # My Hand
     for i in range(MAX_HAND_SIZE):
@@ -87,15 +104,15 @@ def vectorize_state(obs_dict, my_index):
             card_ids.append(0)
             
     # Opp Active
-    opp_act_id, opp_act_hp, opp_act_en, opp_act_rc, oae1, oae2, oae3, oae4 = get_pokemon_stats(opp_state.active[0] if opp_state.active else None)
+    opp_act_id, opp_act_hp, opp_act_en, opp_act_rc, opp_act_dmg, oae1, oae2, oae3, oae4 = get_pokemon_stats(opp_state.active[0] if opp_state.active else None)
     card_ids.extend([opp_act_id, oae1, oae2, oae3, oae4])
-    scalars.extend([opp_act_hp, opp_act_en, opp_act_rc])
+    scalars.extend([opp_act_hp, opp_act_en, opp_act_rc, opp_act_dmg])
     
     # Opp Bench
     for i in range(MAX_BENCH_SIZE):
-        b_id, b_hp, b_en, b_rc, be1, be2, be3, be4 = get_pokemon_stats(opp_state.bench[i] if i < len(opp_state.bench) else None)
+        b_id, b_hp, b_en, b_rc, b_dmg, be1, be2, be3, be4 = get_pokemon_stats(opp_state.bench[i] if i < len(opp_state.bench) else None)
         card_ids.extend([b_id, be1, be2, be3, be4])
-        scalars.extend([b_hp, b_en, b_rc])
+        scalars.extend([b_hp, b_en, b_rc, b_dmg])
         
     # Variables globales
     scalars.append(float(len(my_state.prize)))

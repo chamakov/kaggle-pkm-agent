@@ -40,10 +40,52 @@ class CabtGymEnv(gym.Env):
         self.opponent_agents["random"] = "random"
         
         self.current_opponent_type = "random"
+        
+        # Self-Play Agents (Phase 4)
+        try:
+            from sb3_contrib import MaskablePPO
+            from src.rl.vectorizer import vectorize_state
+            import glob
+            
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            best_model_path = os.path.join(base_dir, "kaggleoutputs", "PokemonAgentPPO", "best_models", "best_model.zip")
+            checkpoints_dir = os.path.join(base_dir, "kaggleoutputs", "PokemonAgentPPO", "checkpoints")
+            
+            chkpt_files = glob.glob(os.path.join(checkpoints_dir, "*.zip"))
+            chkpt_files.sort(key=os.path.getmtime, reverse=True)
+            
+            models_to_load = []
+            if os.path.exists(best_model_path):
+                models_to_load.append(("self_best", best_model_path))
+                
+            for i, p in enumerate(chkpt_files[:2]):
+                models_to_load.append((f"self_past_{i}", p))
+                
+            for name, path in models_to_load:
+                try:
+                    loaded_model = MaskablePPO.load(path)
+                    def create_self_agent(model_instance):
+                        def self_agent_fn(obs_dict, config=None):
+                            try:
+                                vec = vectorize_state(obs_dict, my_index=0)
+                                action_mask = vec.pop("action_mask")
+                                action, _ = model_instance.predict(vec, action_masks=action_mask, deterministic=True)
+                                return [int(action)]
+                            except Exception:
+                                import random
+                                opts = obs_dict.get('select', {}).get('option', [])
+                                return [random.randint(0, max(0, len(opts)-1))] if opts else []
+                        return self_agent_fn
+                        
+                    self.opponent_agents[name] = create_self_agent(loaded_model)
+                except Exception:
+                    pass
+        except ImportError:
+            pass
             
         self.observation_space = spaces.Dict({
             "card_ids": spaces.MultiDiscrete([1300] * 90),
-            "scalars": spaces.Box(low=-1000, high=1000, shape=(40,), dtype=np.float32)
+            "scalars": spaces.Box(low=-1000, high=1000, shape=(52,), dtype=np.float32)
         })
         
         self.current_action_mask = np.ones(MAX_OPTIONS, dtype=np.int8)
@@ -224,7 +266,20 @@ class CabtGymEnv(gym.Env):
         elif action_type == 13: # ACTION_ATTACK
             intermediate_reward += 1.0
         elif action_type == 12: # ACTION_END_TURN
-            intermediate_reward -= 0.5
+            intermediate_reward -= 1.0
+            
+        # Check Prizes Taken
+        def get_prize_count(st):
+            if st is None: return 0
+            obs = st[self.my_index].observation
+            if isinstance(obs, dict) and 'current' in obs and 'players' in obs['current']:
+                return len(obs['current']['players'][self.my_index].get('prize', []))
+            return 0
+            
+        prizes_before = get_prize_count(self._last_state)
+        prizes_after = get_prize_count(state)
+        if prizes_after < prizes_before:
+            intermediate_reward += 3.0 * (prizes_before - prizes_after)
             
         # Reward
         final_reward = state[self.my_index].reward if state[self.my_index].reward is not None else 0.0
