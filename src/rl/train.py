@@ -112,7 +112,7 @@ def train_model():
         try:
             print("Entrenando... presiona Stop (⏹️) en Colab para pausar.")
             print("El mejor modelo se guardará automáticamente en la carpeta 'best_models'.")
-            model.learn(total_timesteps=1000000000, callback=callbacks)
+            model.learn(total_timesteps=10000000, callback=callbacks)
         except KeyboardInterrupt:
             print("\nEntrenamiento detenido manualmente por el usuario.")
         finally:

@@ -118,11 +118,13 @@ class ComboSequencer:
                         
         # Dynamic Energy Caps Dictionary
         energy_caps = {
-            331: {"cost": 4, "scales": False}, # XerneasEX
-            408: {"cost": 2, "scales": False}, # Houndour
-            87:  {"cost": 1, "scales": False}, # Dedenne
-            156: {"cost": 3, "scales": False}, # Crabominable
-            297: {"cost": 1, "scales": False}, # Magearna
+            162: {"cost": 2, "scales": False}, # Slowpoke
+            163: {"cost": 3, "scales": False}, # Slowking
+            183: {"cost": 0, "scales": False}, # Smoochum
+            756: {"cost": 3, "scales": False}, # M Kangaskhan ex
+            140: {"cost": 3, "scales": False}, # Fezandipiti ex
+            184: {"cost": 3, "scales": False}, # Latias ex
+            272: {"cost": 3, "scales": False}, # Lillie's Clefairy ex
         }
         
         # Check Board Control (Gameplan)
@@ -148,46 +150,35 @@ class ComboSequencer:
             card_id = hand[index].get("id", -1) if 0 <= index < len(hand) else -1
             
             # Sub-menu selection (Discarding or Searching)
-            # Dedenne (87) and Porygon2 (474) should NOT be here, because we need to PLAY them!
-            is_discard_action = card_id in [331, 408, 205, 89, 5, 528, 530, 156, 157, 576, 630, 1146, 1235]
+            # If the card selected is not a trainer, it's likely a sub-menu choice from hand (like Ultra Ball discard)
+            is_submenu_card = card_id not in [1227, 1188, 1210, 1231, 1184, 1152, 1121, 1097, 1146, 1092, 1123, 1156, 1248]
             
-            if is_discard_action:
-                if card_id in [331, 576, 630]: # XerneasEX, Samurott, Stoutland
-                    base_score = -20.0 # DO NOT DISCARD
-                elif card_id in [40, 408, 530, 297]: # Utility Pieces
-                    base_score = -5.0
+            if is_submenu_card:
+                if card_id in [162, 163, 1152, 1097, 1188, 1248]: # Do not discard core pieces or recovery
+                    base_score = -20.0
+                elif card_id in [144, 115, 224, 880]: # Bait/Combo pieces - PERFECT FOR DISCARD
+                    base_score = 40.0
                 else:
                     base_score = 5.0 # OK to discard/select
             else:
                 # We are PLAYING an item or supporter!
                 my_deck_count = my_state.get("deckCount", len(my_state.get("deck", [])))
                 
-                if card_id == 87: # Dedenne (Draw 6)
-                    if my_deck_count < 10:
-                        base_score = -50.0 # DO NOT DECK OUT
-                    elif len(hand) < 3:
-                        base_score = 80.0
-                    elif len(hand) >= 5:
-                        base_score = 40.0 # Don't discard a massive hand unnecessarily
-                    else:
-                        base_score = 60.0
-                elif card_id == 474: # Porygon2 (Draw 3)
-                    if my_deck_count < 5:
-                        base_score = -50.0
-                    else:
-                        base_score = 60.0
-                elif card_id == 1146: # Wondrous Patch (Attach {P} from discard)
-                    # Check if we have {P} energy in discard and XerneasEX on bench
-                    my_discard = my_state.get("discard", [])
-                    has_energy_in_discard = any(c.get("id") == 5 for c in my_discard)
-                    has_xerneas_on_bench = any(c and c.get("id") == 331 for c in bench)
+                if card_id in [1188, 1248]: # Ciphermaniac, Academy at Night
+                    # Solo usar si Slowking está en mesa, o si necesitamos piezas del combo con urgencia
+                    has_slowking = any(p and p.get("id") == 163 for p in ([my_active] + bench) if p is not None)
+                    needs_combo_pieces = bench_count == 0 or not has_slowking
                     
-                    if has_energy_in_discard and has_xerneas_on_bench:
-                        base_score = 80.0 # HIGH priority energy acceleration!
+                    if has_slowking:
+                        base_score = 90.0 # ¡Prioridad absoluta para preparar el ataque!
+                    elif needs_combo_pieces:
+                        base_score = 75.0 # Usar para buscar a Slowpoke/Slowking
                     else:
-                        base_score = -10.0 # Don't play it if useless
-                elif card_id == 1235: # Waitress (Attach energy from top 6)
-                    base_score = 60.0 # Always good to play for energy acceleration
+                        base_score = -10.0 # ¡Guardar en mano! No desperdiciarlo sin motivo.
+                elif card_id in [1121, 1092]: # Ultra Ball, Secret Box
+                    base_score = 60.0 # Good for searching
+                elif card_id in [1227, 1210, 1231, 1184, 1152, 1097]: # Recursion and Draw
+                    base_score = 50.0
                 elif is_board_controlled:
                     base_score = 25.0 # Lower priority, but still better than ending turn if free
                 elif is_stall_mode:
@@ -201,7 +192,7 @@ class ComboSequencer:
             
             # Prize value dictionary: EX Pokemon give 2 prizes when KO'd
             prize_value = {
-                331: 2,  # XerneasEX - HIGH RISK
+                140: 2, 184: 2, 272: 2, 756: 2, 1071: 2  # EX Pokemon
                 # All other basics are worth 1 prize
             }
             
@@ -251,20 +242,23 @@ class ComboSequencer:
                 else:
                     emergency_bonus = 0.0
                 
+                bait_ids = [144, 115, 224, 880] # Kyurem, Conkeldurr, Annihilape, Spectrier
+                
                 # Score based on card value and bench urgency
-                if card_id in [408]:  # Houndour - strong 1-prize attacker
-                    base_score = 55.0 + emergency_bonus
-                elif card_id in [156, 77, 157, 528]: # Other 1-prize basics
-                    base_score = 50.0 + emergency_bonus
-                elif card_id == 331: # XerneasEX - 2 prize risk
-                    if bench_count < 1:
-                        base_score = 60.0 + emergency_bonus # Must bench SOMETHING
-                    elif bench_count >= 3:
-                        base_score = 45.0  # Safe to bench EX as backup
+                if card_id in bait_ids:
+                    if bench_count == 0:
+                        base_score = 50.0 + emergency_bonus # Bench only if desperate
                     else:
-                        base_score = 5.0  # Risky to expose EX with thin bench
-                elif card_id in [87, 474, 297]: # Utility pieces
-                    base_score = 48.0 + emergency_bonus
+                        base_score = -50.0 # DO NOT BENCH BAIT! Keep in hand for Academy at Night!
+                elif card_id == 162: # Slowpoke
+                    base_score = 70.0 + emergency_bonus
+                elif card_id == 183: # Smoochum
+                    if bench_count == 0 or (my_active and my_active.get("id") == 183):
+                        base_score = 65.0 + emergency_bonus
+                    else:
+                        base_score = 50.0 + emergency_bonus
+                elif card_id == 756: # M Kangaskhan ex
+                    base_score = 60.0 + emergency_bonus
                 else:
                     base_score = 45.0 + emergency_bonus
                 
@@ -272,7 +266,7 @@ class ComboSequencer:
             base_score = 65.0 # Always evolve if possible
             
         # Known damage per Pokemon ID
-        pokemon_dmg = {77: 20, 156: 20, 157: 120, 331: 200, 408: 150, 87: 0, 474: 0, 554: 0, 528: 20, 530: 40, 297: 20}
+        pokemon_dmg = {163: 200, 162: 30, 183: 0, 756: 100, 140: 100, 184: 100, 272: 100}
         
         if action_type == self.ACTION_ATTACH_ENERGY:
             in_play_area = action.get("inPlayArea", -1)
@@ -369,19 +363,13 @@ class ComboSequencer:
         
         # Known damage per Pokemon ID (best attack damage)
         pokemon_best_damage = {
-            77: 20,    # Litten
-            156: 20,   # Crabominable
-            157: 120,  # Chewtle
-            331: 140,  # XerneasEX
-            408: 30,   # Houndour
-            87: 0,     # Dedenne (utility)
-            474: 0,    # Porygon2 (utility)
-            554: 0,    # Audino (utility)
-            528: 20,   # Timburr
-            530: 100,  # Conkeldurr
-            576: 100,  # Samurott
-            630: 120,  # Stoutland
-            297: 20,   # Magearna
+            163: 200,  # Slowking (Artificial high damage to prioritize it)
+            162: 30,   # Slowpoke
+            183: 0,    # Smoochum (Utility)
+            756: 100,  # M Kangaskhan
+            140: 100,  # Fezandipiti
+            184: 100,  # Latias
+            272: 100,  # Clefairy
         }
         
         # Check if a stronger attacker is ready on the bench
@@ -420,12 +408,12 @@ class ComboSequencer:
             # Retreat Logic - defensive, offensive, AND prize-protection
             my_remaining_hp = (my_active.get("hp", 0) - my_active.get("damage", 0)) if my_active else 0
             
-            # MEAT-SHIELD LOGIC: If we are a 1-prize utility (Houndour, Litten, Audino)
-            # and XerneasEX (331) is on the bench but NOT ready, we MUST NOT retreat!
-            is_meat_shield = active_prize_value == 1 and my_active_id in [408, 77, 554, 297]
-            has_xerneas_on_bench = any(b and b.get("id") == 331 for b in bench)
+            # MEAT-SHIELD LOGIC: If we are a 1-prize utility
+            # and Slowking (163) is on the bench but NOT ready, we MUST NOT retreat!
+            is_meat_shield = active_prize_value == 1 and my_active_id in [162, 183]
+            has_slowking_on_bench = any(b and b.get("id") == 163 for b in bench)
             
-            if is_meat_shield and has_xerneas_on_bench and not best_bench_ready:
+            if is_meat_shield and has_slowking_on_bench and not best_bench_ready:
                 base_score = -50.0 # DO NOT RETREAT! Hold the line!
             elif my_active and threat_bonus > 0 and my_remaining_hp <= 60:
                 # DEFENSIVE: We are dying
@@ -495,6 +483,10 @@ class ComboSequencer:
                     active_cap = energy_caps.get(active_id, {"cost": 3, "scales": False})
                     if active_energies >= active_cap["cost"]:
                         base_score += 10.0  # We're loaded with a real attack!
+                        
+                # THE LUCK FACTOR: Always prioritize attacking with Slowking if possible
+                if my_active and my_active.get("id") == 163:
+                    base_score += 35.0 # Attack even if top deck isn't guaranteed
                 
                 if threat_bonus > 0:
                     base_score += 15.0

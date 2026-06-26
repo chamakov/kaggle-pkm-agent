@@ -217,14 +217,41 @@ class CabtGymEnv(gym.Env):
         action_type = action_obj.get('type')
         
         intermediate_reward = 0.0
-        if action_type == 9: # ACTION_ATTACH_ENERGY
-            intermediate_reward += 0.5
+        played_card_id = -1
+        
+        try:
+            if action_type in [8, 10]: # Bench or Evolve
+                current = last_obs.get('current', {})
+                players = current.get('players', [])
+                if len(players) > self.my_index:
+                    my_state = players[self.my_index]
+                    hand = my_state.get('hand', [])
+                    idx = action_obj.get('index', -1)
+                    if 0 <= idx < len(hand):
+                        c = hand[idx]
+                        played_card_id = c.get('id', -1) if isinstance(c, dict) else getattr(c, 'id', -1)
+        except Exception:
+            pass
+            
+        if action_type == 8: # ACTION_BENCH_POKEMON
+            if played_card_id == 162: # Slowpoke
+                intermediate_reward += 2.0
+            elif played_card_id in [144, 115, 224, 880]: # Penalize benching bait slightly
+                intermediate_reward -= 1.0
+            else:
+                intermediate_reward += 0.2
+        elif action_type == 9: # ACTION_ATTACH_ENERGY
+            intermediate_reward += 1.5
         elif action_type == 10: # ACTION_EVOLVE
-            intermediate_reward += 2.0
+            if played_card_id == 163: # Slowking
+                intermediate_reward += 4.0
+            else:
+                intermediate_reward += 1.0
         elif action_type == 13: # ACTION_ATTACK
             intermediate_reward += 1.0
         elif action_type == 12: # ACTION_END_TURN
-            intermediate_reward -= 1.0
+            if len(options) > 1:
+                intermediate_reward -= 1.0
             
         # Check Prizes Taken
         def get_prize_count(st):
@@ -237,7 +264,7 @@ class CabtGymEnv(gym.Env):
         prizes_before = get_prize_count(self._last_state)
         prizes_after = get_prize_count(state)
         if prizes_after < prizes_before:
-            intermediate_reward += 3.0 * (prizes_before - prizes_after)
+            intermediate_reward += 5.0 * (prizes_before - prizes_after)
             
         # Reward
         final_reward = state[self.my_index].reward if state[self.my_index].reward is not None else 0.0
