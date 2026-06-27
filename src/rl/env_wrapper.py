@@ -132,8 +132,6 @@ class CabtGymEnv(gym.Env):
         else:
             self.current_opponent_type = "random"
             
-        print(f"[{self.my_index}] Nuevo Episodio. Entrenando contra: {self.current_opponent_type}")
-        
         # We run env.reset() which initializes the state
         state = self.env.reset(num_agents=2)
         
