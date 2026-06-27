@@ -30,10 +30,23 @@ class CabtGymEnv(gym.Env):
             
         # Lucario Agent
         try:
-            # sys.path is already modified to include cwd
-            from scratch.lucario_agent import agent_fn as lucario_fn
-            self.opponent_agents["lucario"] = lucario_fn
-        except ImportError:
+            import importlib.util
+            import os
+            import sys
+            
+            # Ensure safe dynamic import regardless of sys.path or __init__.py absence
+            filepath = os.path.join(os.getcwd(), "scratch", "lucario_agent.py")
+            if os.path.exists(filepath):
+                spec = importlib.util.spec_from_file_location("lucario_agent", filepath)
+                lucario_module = importlib.util.module_from_spec(spec)
+                sys.modules["lucario_agent"] = lucario_module
+                spec.loader.exec_module(lucario_module)
+                self.opponent_agents["lucario"] = lucario_module.agent
+            else:
+                print(f"Warning: lucario_agent.py not found at {filepath}")
+                self.opponent_agents["lucario"] = None
+        except Exception as e:
+            print(f"Warning: Failed to load lucario agent: {e}")
             self.opponent_agents["lucario"] = None
             
         # Random Agent (Fallback)
