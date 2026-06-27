@@ -3,10 +3,14 @@ import sys
 from collections import defaultdict
 
 try:
-    from cg.api import AreaType, CardType, EnergyType, Observation, SelectContext, OptionType, Card, Pokemon, all_card_data, to_observation_class
+    # Intenta importar desde kaggle_environments (Para Kaggle / Colab)
+    from kaggle_environments.envs.cabt.cg.api import AreaType, CardType, EnergyType, Observation, SelectContext, OptionType, Card, Pokemon, all_card_data, to_observation_class
 except ImportError:
-    sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), "remotethings", "cg_custom"))
-    from cg.api import AreaType, CardType, EnergyType, Observation, SelectContext, OptionType, Card, Pokemon, all_card_data, to_observation_class
+    try:
+        # Fallback local (Para la Mac)
+        from scratch.v8_extract.cg.api import AreaType, CardType, EnergyType, Observation, SelectContext, OptionType, Card, Pokemon, all_card_data, to_observation_class
+    except ImportError:
+        pass
 
 """
 Mega Lucario ex Deck

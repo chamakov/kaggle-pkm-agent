@@ -6,13 +6,14 @@ class ComboSequencer:
     
     def __init__(self):
         # Action type constants based on Kaggle cabt engine
-        self.ACTION_END_TURN = 12
-        self.ACTION_ATTACK = 13
         self.ACTION_PLAY_SUPPORTER_ITEM = 3
-        self.ACTION_BENCH_POKEMON = 8
-        self.ACTION_ATTACH_ENERGY = 9
-        self.ACTION_EVOLVE = 10
-        self.ACTION_MULLIGAN_DONE = 14
+        self.ACTION_BENCH_POKEMON = 7
+        self.ACTION_ATTACH_ENERGY = 8
+        self.ACTION_EVOLVE = 9
+        self.ACTION_ABILITY = 10
+        self.ACTION_RETREAT = 12
+        self.ACTION_ATTACK = 13
+        self.ACTION_END_TURN = 14
         
         # Load MetaAnalyzer for persistent learning
         from src.agent.meta_analyzer import MetaAnalyzer
@@ -125,6 +126,7 @@ class ComboSequencer:
             140: {"cost": 3, "scales": False}, # Fezandipiti ex
             184: {"cost": 3, "scales": False}, # Latias ex
             272: {"cost": 3, "scales": False}, # Lillie's Clefairy ex
+            1071: {"cost": 1, "scales": False}, # Meowth ex (solo 1 para retirada)
         }
         
         # Check Board Control (Gameplan)
@@ -290,7 +292,9 @@ class ComboSequencer:
                 
                 # Check for Hard Cap
                 if target_energies >= optimal_cost and not scales:
-                    base_score = -10.0 # DO NOT OVER-ATTACH!
+                    base_score = -100.0 # DO NOT OVER-ATTACH! Enmascarar completamente.
+                elif target_id == 183:
+                    base_score = -100.0 # NUNCA dar energía a Smoochum (costo de ataque 0)
                 else:
                     # Heuristics for Energy Attachment
                     active_energies = len(my_active.get("energyCards", [])) if my_active else 0
@@ -298,7 +302,19 @@ class ComboSequencer:
                     active_cap = energy_caps.get(active_id, {"cost": 3, "scales": False})
                     active_dmg = pokemon_dmg.get(active_id, 50)
                     
-                    if in_play_area == 4:
+                    # Verificar si tenemos un atacante principal hambriento (Slowpoke/Slowking)
+                    has_hungry_slowpoke = False
+                    for p in ([my_active] + bench):
+                        if p and p.get("id") in [162, 163]:
+                            p_en = len(p.get("energyCards", []))
+                            p_cap = energy_caps.get(p.get("id"))["cost"]
+                            if p_en < p_cap:
+                                has_hungry_slowpoke = True
+                                break
+                    
+                    if target_id == 1071 and has_hungry_slowpoke:
+                        base_score = -50.0 # NUNCA dar energía a Meowth si Slowpoke/Slowking la necesita
+                    elif in_play_area == 4:
                         # ACTIVE ATTACHMENT
                         retreat_cost = my_active.get("retreatCost", 1) if my_active else 1
                         
@@ -404,7 +420,7 @@ class ComboSequencer:
         active_prize_value = {331: 2}.get(my_active_id, 1) if my_active else 1
         bench_count = len(bench)
         
-        if action_type == 6:
+        if action_type == self.ACTION_RETREAT:
             # Retreat Logic - defensive, offensive, AND prize-protection
             my_remaining_hp = (my_active.get("hp", 0) - my_active.get("damage", 0)) if my_active else 0
             

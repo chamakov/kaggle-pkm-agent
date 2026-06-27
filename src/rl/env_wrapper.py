@@ -220,7 +220,7 @@ class CabtGymEnv(gym.Env):
         played_card_id = -1
         
         try:
-            if action_type in [8, 10]: # Bench or Evolve
+            if action_type in [7, 9]: # Bench or Evolve
                 current = last_obs.get('current', {})
                 players = current.get('players', [])
                 if len(players) > self.my_index:
@@ -233,23 +233,23 @@ class CabtGymEnv(gym.Env):
         except Exception:
             pass
             
-        if action_type == 8: # ACTION_BENCH_POKEMON
+        if action_type == 7: # ACTION_BENCH_POKEMON
             if played_card_id == 162: # Slowpoke
                 intermediate_reward += 2.0
             elif played_card_id in [144, 115, 224, 880]: # Penalize benching bait slightly
                 intermediate_reward -= 1.0
             else:
                 intermediate_reward += 0.2
-        elif action_type == 9: # ACTION_ATTACH_ENERGY
+        elif action_type == 8: # ACTION_ATTACH_ENERGY
             intermediate_reward += 1.5
-        elif action_type == 10: # ACTION_EVOLVE
+        elif action_type == 9: # ACTION_EVOLVE
             if played_card_id == 163: # Slowking
                 intermediate_reward += 4.0
             else:
                 intermediate_reward += 1.0
         elif action_type == 13: # ACTION_ATTACK
             intermediate_reward += 1.0
-        elif action_type == 12: # ACTION_END_TURN
+        elif action_type == 14: # ACTION_END_TURN
             if len(options) > 1:
                 intermediate_reward -= 1.0
             
