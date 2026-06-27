@@ -272,8 +272,10 @@ class CabtGymEnv(gym.Env):
             if played_card_id == 1248: # Academy at Night
                 intermediate_reward += 2.0
         elif action_type == 10: # ACTION_ABILITY (or Stadium Effect)
-            # Using Academy at night effect
-            intermediate_reward += 1.0
+            # No recompensamos el uso de habilidades o estadios de forma repetitiva
+            # para evitar que el agente haga un bucle infinito poniendo cartas en el tope.
+            # Le damos un ligero castigo para desincentivar el estancamiento.
+            intermediate_reward -= 0.2
         elif action_type == 19: # ACTION_SELECT_FROM_DECK (Ciphermaniac)
             if played_card_id in [5, 9, 19, 184, 144, 163, 162]: # Energies, Latias, Kyurem, Slowpoke, Slowking
                 intermediate_reward += 3.0
