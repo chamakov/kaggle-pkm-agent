@@ -34,7 +34,6 @@ class CabtGymEnv(gym.Env):
             import os
             import sys
             
-            # Ensure safe dynamic import regardless of sys.path or __init__.py absence
             filepath = os.path.join(os.getcwd(), "scratch", "lucario_agent.py")
             if os.path.exists(filepath):
                 spec = importlib.util.spec_from_file_location("lucario_agent", filepath)
@@ -43,11 +42,23 @@ class CabtGymEnv(gym.Env):
                 spec.loader.exec_module(lucario_module)
                 self.opponent_agents["lucario"] = lucario_module.agent
             else:
-                print(f"Warning: lucario_agent.py not found at {filepath}")
                 self.opponent_agents["lucario"] = None
-        except Exception as e:
-            print(f"Warning: Failed to load lucario agent: {e}")
+        except Exception:
             self.opponent_agents["lucario"] = None
+            
+        # Slowking Agent (Mirror match)
+        try:
+            filepath = os.path.join(os.getcwd(), "scratch", "slowking_agent.py")
+            if os.path.exists(filepath):
+                spec = importlib.util.spec_from_file_location("slowking_agent", filepath)
+                slowking_module = importlib.util.module_from_spec(spec)
+                sys.modules["slowking_agent"] = slowking_module
+                spec.loader.exec_module(slowking_module)
+                self.opponent_agents["slowking"] = slowking_module.agent
+            else:
+                self.opponent_agents["slowking"] = None
+        except Exception:
+            self.opponent_agents["slowking"] = None
             
         # Random Agent (Fallback)
         self.opponent_agents["random"] = "random"
@@ -249,11 +260,32 @@ class CabtGymEnv(gym.Env):
         if action_type == 7: # ACTION_BENCH_POKEMON
             if played_card_id == 162: # Slowpoke
                 intermediate_reward += 2.0
+            elif played_card_id == 140: # Fezandipiti ex
+                # Penalize benching Fezandipiti unless someone was KO'd last turn (prizes taken)
+                # We approximate by just penalizing it strongly to avoid filling the bench
+                intermediate_reward -= 3.0
             elif played_card_id in [144, 115, 224, 880]: # Penalize benching bait slightly
                 intermediate_reward -= 1.0
             else:
                 intermediate_reward += 0.2
+        elif action_type == 3: # ACTION_PLAY_SUPPORTER_ITEM
+            if played_card_id == 1248: # Academy at Night
+                intermediate_reward += 2.0
+        elif action_type == 10: # ACTION_ABILITY (or Stadium Effect)
+            # Using Academy at night effect
+            intermediate_reward += 1.0
+        elif action_type == 19: # ACTION_SELECT_FROM_DECK (Ciphermaniac)
+            if played_card_id in [5, 9, 19, 184, 144, 163, 162]: # Energies, Latias, Kyurem, Slowpoke, Slowking
+                intermediate_reward += 3.0
+        elif action_type == 4: # STARTING_ACTIVE (Setup)
+            if played_card_id == 140: # Fezandipiti active
+                intermediate_reward -= 3.0
+            elif played_card_id == 756: # Kangaskhan active
+                intermediate_reward += 3.0
         elif action_type == 8: # ACTION_ATTACH_ENERGY
+            # Penalize bad targets, reward good ones
+            target_area = action_obj.get("targetArea")
+            # For simplicity, base reward is 1.5, synergy analyzer does target filtering
             intermediate_reward += 1.5
         elif action_type == 9: # ACTION_EVOLVE
             if played_card_id == 163: # Slowking
@@ -261,10 +293,21 @@ class CabtGymEnv(gym.Env):
             else:
                 intermediate_reward += 1.0
         elif action_type == 13: # ACTION_ATTACK
-            intermediate_reward += 1.0
+            intermediate_reward += 3.0
         elif action_type == 14: # ACTION_END_TURN
             if len(options) > 1:
-                intermediate_reward -= 1.0
+                # If we had energy in hand and good pokemon on board, penalize skipping
+                try:
+                    current = last_obs.get('current', {})
+                    players = current.get('players', [])
+                    if len(players) > self.my_index:
+                        my_state = players[self.my_index]
+                        hand = my_state.get('hand', [])
+                        has_energy = any(c.get('id') in [5, 9, 19] for c in hand if isinstance(c, dict))
+                        if has_energy:
+                            intermediate_reward -= 2.0
+                except:
+                    intermediate_reward -= 1.0
             
         # Check Prizes Taken
         def get_prize_count(st):
@@ -289,7 +332,13 @@ class CabtGymEnv(gym.Env):
         # For PPO, a win of +10 is better than +1 if intermediate rewards are like +1.
         if done:
             if final_reward > 0:
-                final_reward = 10.0 # Amplificar la victoria para sobrepasar cualquier intermediate reward
+                prizes_left = 3 - get_prize_count(state) # Assuming 3 prizes to win
+                if prizes_left > 0:
+                    # Won by deckout
+                    final_reward = -2.0
+                else:
+                    # Won by prizes
+                    final_reward = 10.0
             elif final_reward < 0:
                 final_reward = -10.0 # Amplificar la derrota
                 
