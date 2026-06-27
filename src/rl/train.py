@@ -95,14 +95,46 @@ def train_model():
         
         # Callback para guardar checkpoints cada N pasos
         from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
+        import glob
+        
+        class RotatedCheckpointCallback(CheckpointCallback):
+            def __init__(self, save_freq: int, save_path: str, name_prefix: str = "rl_model", keep_num: int = 2, **kwargs):
+                super().__init__(save_freq, save_path, name_prefix, **kwargs)
+                self.keep_num = keep_num
+
+            def _on_step(self) -> bool:
+                result = super()._on_step()
+                if self.n_calls % self.save_freq == 0:
+                    search_pattern = os.path.join(self.save_path, f"{self.name_prefix}_*steps.zip")
+                    files = glob.glob(search_pattern)
+                    
+                    def extract_step(filepath):
+                        try:
+                            # format is prefix_1234_steps.zip
+                            return int(filepath.split("_")[-2])
+                        except:
+                            return 0
+                            
+                    files.sort(key=extract_step)
+                    if len(files) > self.keep_num:
+                        for f in files[:-self.keep_num]:
+                            try:
+                                os.remove(f)
+                                buffer_f = f.replace(".zip", "_replay_buffer.pkl")
+                                if os.path.exists(buffer_f):
+                                    os.remove(buffer_f)
+                            except Exception as e:
+                                print(f"Warning: could not delete {f}: {e}")
+                return result
         
         checkpoint_dir = os.path.join(base_save_dir, "checkpoints")
         os.makedirs(checkpoint_dir, exist_ok=True)
         
-        checkpoint_callback = CheckpointCallback(
-            save_freq=51200,  # 2048 * 25 (Múltiplo exacto de n_steps para guardar justo tras una actualización)
+        checkpoint_callback = RotatedCheckpointCallback(
+            save_freq=503808,  # 4096 * 123 (Cerca de 500k, múltiplo de n_steps)
             save_path=checkpoint_dir,
-            name_prefix="ppo_cabt_model"
+            name_prefix="ppo_cabt_model",
+            keep_num=2
         )
         
         # Agrupar los callbacks
