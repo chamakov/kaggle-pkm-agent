@@ -67,7 +67,7 @@ class CabtGymEnv(gym.Env):
             
         self.observation_space = spaces.Dict({
             "card_ids": spaces.MultiDiscrete([1300] * 90),
-            "scalars": spaces.Box(low=-1000, high=1000, shape=(52,), dtype=np.float32)
+            "scalars": spaces.Box(low=-1000.0, high=1000.0, shape=(111,), dtype=np.float32),
         })
         
         self.current_action_mask = np.ones(MAX_OPTIONS, dtype=np.int8)
@@ -106,6 +106,14 @@ class CabtGymEnv(gym.Env):
             9, 9, 9                  # Boomerang Energy
         ]
         
+        # Load alternative deck for opponents
+        self._lucario_deck = []
+        try:
+            with open("deck.csv", "r") as f:
+                self._lucario_deck = [int(line.strip()) for line in f.readlines() if line.strip().isdigit()]
+        except Exception:
+            self._lucario_deck = self._slowking_deck
+            
     def action_masks(self) -> np.ndarray:
         """Required by sb3-contrib MaskablePPO to fetch valid actions."""
         return self.current_action_mask
@@ -136,7 +144,11 @@ class CabtGymEnv(gym.Env):
         state = self.env.reset(num_agents=2)
         
         # Send deck for both players (Step 0)
-        actions = [self._slowking_deck, self._slowking_deck]
+        opp_deck = self._slowking_deck if self.current_opponent_type == "slowking" else self._lucario_deck
+        
+        actions = [None, None]
+        actions[self.my_index] = self._slowking_deck
+        actions[self.opp_index] = opp_deck
         state = self.env.step(actions)
         
         # Fast forward until it's our turn
@@ -293,7 +305,26 @@ class CabtGymEnv(gym.Env):
             else:
                 intermediate_reward += 1.0
         elif action_type == 13: # ACTION_ATTACK
-            intermediate_reward += 3.0
+            intermediate_reward += 1.0
+            try:
+                if last_obs and 'current' in last_obs:
+                    my_players = last_obs['current']['players']
+                    if len(my_players) > 1:
+                        my_active = my_players[self.my_index].get('active', [{}])[0]
+                        opp_active = my_players[self.opp_index].get('active', [{}])[0]
+                        
+                        dmg = 0.0
+                        if my_active and my_active.get('attacks'):
+                            # Intentamos obtener el daño del ataque (tomamos el primero si no sabemos cuál usó exacto)
+                            dmg = float(my_active['attacks'][0].get('damage', 0))
+                            
+                        if opp_active and opp_active.get('hp'):
+                            opp_hp = float(opp_active.get('hp', 0))
+                            if opp_hp > 0:
+                                dmg_ratio = min(dmg, opp_hp) / opp_hp
+                                intermediate_reward += 5.0 * dmg_ratio # Extra bonus based on relative damage
+            except Exception:
+                pass
         elif action_type == 14: # ACTION_END_TURN
             if len(options) > 1:
                 # If we had energy in hand and good pokemon on board, penalize skipping
@@ -332,8 +363,8 @@ class CabtGymEnv(gym.Env):
         # For PPO, a win of +10 is better than +1 if intermediate rewards are like +1.
         if done:
             if final_reward > 0:
-                prizes_left = 3 - get_prize_count(state) # Assuming 3 prizes to win
-                if prizes_left > 0:
+                prizes_remaining = get_prize_count(state) # Assuming 3 prizes to win
+                if prizes_remaining > 0:
                     # Won by deckout
                     final_reward = -2.0
                 else:
@@ -342,6 +373,10 @@ class CabtGymEnv(gym.Env):
             elif final_reward < 0:
                 final_reward = -10.0 # Amplificar la derrota
                 
+        # Escalar las recompensas intermedias para que no superen a la victoria
+        SHAPING_SCALE = 0.2
+        intermediate_reward *= SHAPING_SCALE
+        
         reward = final_reward + intermediate_reward
         
         if not done:
@@ -352,5 +387,9 @@ class CabtGymEnv(gym.Env):
         self._last_state = state
         vec = vectorize_state(self._get_obs_dict(state), self.my_index)
         self.current_action_mask = vec.pop("action_mask")
+        info = {
+            "is_success": final_reward > 0 if done else False,
+            "opponent": getattr(self, 'current_opponent_type', 'unknown')
+        }
         
-        return vec, float(reward), done, False, {}
+        return vec, float(reward), done, False, info

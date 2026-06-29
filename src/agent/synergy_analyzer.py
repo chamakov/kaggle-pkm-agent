@@ -127,6 +127,13 @@ class ComboSequencer:
             184: {"cost": 3, "scales": False}, # Latias ex
             272: {"cost": 3, "scales": False}, # Lillie's Clefairy ex
             1071: {"cost": 1, "scales": False}, # Meowth ex (solo 1 para retirada)
+            # Lucario deck
+            335: {"cost": 2, "scales": False}, # Makuhita
+            336: {"cost": 3, "scales": False}, # Hariyama
+            423: {"cost": 1, "scales": False}, # Lunatone
+            424: {"cost": 1, "scales": False}, # Solrock
+            504: {"cost": 1, "scales": False}, # Riolu
+            505: {"cost": 3, "scales": False}, # Mega Lucario ex
         }
         
         # Check Board Control (Gameplan)
@@ -142,6 +149,53 @@ class ComboSequencer:
             if my_energies >= active_cap["cost"] and my_hp > 100 and opp_energies <= 1:
                 is_board_controlled = True
                 
+        # --- Pre-calculate Bench Metrics (Fixes NameErrors) ---
+        bench_count = len(bench)
+        
+        # Known damage per Pokemon ID (best attack damage)
+        pokemon_best_damage = {
+            163: 200,  # Slowking
+            162: 30,   # Slowpoke
+            183: 0,    # Smoochum
+            756: 100,  # M Kangaskhan
+            140: 100,  # Fezandipiti
+            184: 100,  # Latias
+            272: 100,  # Clefairy
+            # Lucario deck
+            335: 20,   # Makuhita
+            336: 80,   # Hariyama
+            423: 20,   # Lunatone
+            424: 20,   # Solrock
+            504: 30,   # Riolu
+            505: 150,  # Mega Lucario ex
+        }
+        
+        my_active_id = my_active.get("id", -1) if my_active else -1
+        my_active_best_dmg = pokemon_best_damage.get(my_active_id, 50)
+        
+        best_bench_dmg = 0
+        best_bench_ready_dmg = 0
+        best_bench_ready = False
+        
+        for b in bench:
+            if b is None: continue
+            bid = b.get("id", -1)
+            b_dmg = pokemon_best_damage.get(bid, 50)
+            b_energies = len(b.get("energyCards", []))
+            b_cap = energy_caps.get(bid, {"cost": 3, "scales": False})
+            
+            if b_dmg > best_bench_dmg:
+                best_bench_dmg = b_dmg
+                
+            if b_energies >= b_cap["cost"] and b_dmg >= 30:
+                best_bench_ready = True
+                if b_dmg > best_bench_ready_dmg:
+                    best_bench_ready_dmg = b_dmg
+                    
+        if best_bench_ready:
+            best_bench_dmg = best_bench_ready_dmg
+        # ----------------------------------------------------
+        
         # Context-Aware Sequencing Combo Flow
         base_score = 0.0
         
@@ -200,7 +254,6 @@ class ComboSequencer:
             
             # If we have NO Active Pokemon, this action is a "Promote to Active" action.
             is_promoting = (my_active is None or not my_active.get("id"))
-            bench_count = len(bench)
             
             if is_promoting:
                 # We MUST promote something. Pick wisely.
@@ -267,10 +320,7 @@ class ComboSequencer:
         elif action_type == self.ACTION_EVOLVE:
             base_score = 65.0 # Always evolve if possible
             
-        # Known damage per Pokemon ID
-        pokemon_dmg = {163: 200, 162: 30, 183: 0, 756: 100, 140: 100, 184: 100, 272: 100}
-        
-        if action_type == self.ACTION_ATTACH_ENERGY:
+        elif action_type == self.ACTION_ATTACH_ENERGY:
             in_play_area = action.get("inPlayArea", -1)
             in_play_index = action.get("inPlayIndex", 0)
             
@@ -300,7 +350,7 @@ class ComboSequencer:
                     active_energies = len(my_active.get("energyCards", [])) if my_active else 0
                     active_id = my_active.get("id", -1) if my_active else -1
                     active_cap = energy_caps.get(active_id, {"cost": 3, "scales": False})
-                    active_dmg = pokemon_dmg.get(active_id, 50)
+                    active_dmg = pokemon_best_damage.get(active_id, 50)
                     
                     # Verificar si tenemos un atacante principal hambriento (Slowpoke/Slowking)
                     has_hungry_slowpoke = False
@@ -334,7 +384,7 @@ class ComboSequencer:
                             base_score += 5.0
                     elif in_play_area == 5:
                         # BENCH ATTACHMENT
-                        target_dmg = pokemon_dmg.get(target_id, 50)
+                        target_dmg = pokemon_best_damage.get(target_id, 50)
                         if target_dmg >= 100 and target_energies < optimal_cost:
                             # HIGH PRIORITY: Energize a strong bench attacker (XerneasEX, Houndour)
                             if (active_energies >= active_cap["cost"] and active_dmg > 20) or (best_bench_ready and active_energies < my_active.get("retreatCost", 1) and active_dmg <= 20):
@@ -377,48 +427,8 @@ class ComboSequencer:
             572: 30,   # Houndour attack
         }
         
-        # Known damage per Pokemon ID (best attack damage)
-        pokemon_best_damage = {
-            163: 200,  # Slowking (Artificial high damage to prioritize it)
-            162: 30,   # Slowpoke
-            183: 0,    # Smoochum (Utility)
-            756: 100,  # M Kangaskhan
-            140: 100,  # Fezandipiti
-            184: 100,  # Latias
-            272: 100,  # Clefairy
-        }
-        
-        # Check if a stronger attacker is ready on the bench
-        my_active_id = my_active.get("id", -1) if my_active else -1
-        my_active_best_dmg = pokemon_best_damage.get(my_active_id, 50)
-        
-        best_bench_dmg = 0
-        best_bench_ready_dmg = 0
-        best_bench_ready = False
-        
-        for b in bench:
-            if b is None:
-                continue
-            bid = b.get("id", -1)
-            b_dmg = pokemon_best_damage.get(bid, 50)
-            b_energies = len(b.get("energyCards", []))
-            b_cap = energy_caps.get(bid, {"cost": 3, "scales": False})
-            
-            if b_dmg > best_bench_dmg:
-                best_bench_dmg = b_dmg
-                
-            if b_energies >= b_cap["cost"]:
-                best_bench_ready = True
-                if b_dmg > best_bench_ready_dmg:
-                    best_bench_ready_dmg = b_dmg
-                    
-        # Use the damage of the actual READY pokemon for retreat decisions
-        if best_bench_ready:
-            best_bench_dmg = best_bench_ready_dmg
-        
         # Prize value for active pokemon
-        active_prize_value = {331: 2}.get(my_active_id, 1) if my_active else 1
-        bench_count = len(bench)
+        active_prize_value = {331: 2, 756: 2, 505: 3, 140: 2, 184: 2, 272: 2}.get(my_active_id, 1) if my_active else 1
         
         if action_type == self.ACTION_RETREAT:
             # Retreat Logic - defensive, offensive, AND prize-protection
@@ -532,6 +542,10 @@ class ComboSequencer:
             else:
                 # In aggro, passing without attacking is terrible
                 base_score = -15.0
+        elif action_type == self.ACTION_ABILITY:
+            # Use abilities like Academy at Night, Concealed Cards, etc.
+            # Usually playing abilities is good, but we don't want infinite loops
+            base_score = 45.0
         else:
             base_score = 1.0
             

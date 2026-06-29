@@ -4,12 +4,8 @@ import os
 # Ensure the src module is in path if this script is run directly by kaggle-environments
 sys.path.append(os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 
-from src.engine.cabt_adapter import CabtGameState
-from src.agent.belief_tracker import BeliefStateTracker
-from src.agent.ismcts import ismcts
-
-# Global belief tracker persists across turns for a single game instance
-global_belief_tracker = None
+# Ensure the src module is in path if this script is run directly by kaggle-environments
+sys.path.append(os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 
 def agent_fn(observation, configuration):
     """
@@ -20,17 +16,7 @@ def agent_fn(observation, configuration):
     :param configuration: Game configuration parameters.
     :return: The chosen action (integer index or specific format required by cabt).
     """
-    global global_belief_tracker
-    
     player_id = observation.get("player", 0)
-    
-    # Initialize the belief tracker on the first turn
-    if global_belief_tracker is None:
-        # Assumed opponent is the other player ID (0 or 1)
-        global_belief_tracker = BeliefStateTracker(opponent_id=1 - player_id)
-        
-    # 1. Update belief state with the latest observation
-    global_belief_tracker.update_from_observation(observation)
     
     # Handle initial deck selection edge case
     select_data = observation.get("select")

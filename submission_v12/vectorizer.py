@@ -77,8 +77,11 @@ def vectorize_state(obs_dict, my_index):
     try:
         from cg.api import to_observation_class
     except ImportError:
-        sys.path.append(os.path.join(os.getcwd(), "remotethings", "cg_custom"))
-        from cg.api import to_observation_class
+        try:
+            from kaggle_environments.envs.cabt.cg.api import to_observation_class
+        except ImportError:
+            sys.path.append(os.path.join(os.getcwd(), "remotethings", "cg_custom"))
+            from cg.api import to_observation_class
 
     obs = to_observation_class(obs_dict)
     
