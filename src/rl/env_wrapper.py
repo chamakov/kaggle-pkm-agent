@@ -6,10 +6,10 @@ from kaggle_environments import make
 import sys
 import os
 try:
-    from src.rl.vectorizer import vectorize_state, MAX_OPTIONS
+    from src.rl.vectorizer import vectorize_state, MAX_OPTIONS, MAX_CARD_ID
 except ImportError:
     sys.path.append(os.getcwd())
-    from src.rl.vectorizer import vectorize_state, MAX_OPTIONS
+    from src.rl.vectorizer import vectorize_state, MAX_OPTIONS, MAX_CARD_ID
 
 class CabtGymEnv(gym.Env):
     def __init__(self, opponent_agent=None, my_index=0):
@@ -66,7 +66,7 @@ class CabtGymEnv(gym.Env):
         self.current_opponent_type = "random"
             
         self.observation_space = spaces.Dict({
-            "card_ids": spaces.MultiDiscrete([1300] * 90),
+            "card_ids": spaces.Box(low=0, high=MAX_CARD_ID, shape=(90,), dtype=np.int32),
             "scalars": spaces.Box(low=-1000.0, high=1000.0, shape=(111,), dtype=np.float32),
         })
         
