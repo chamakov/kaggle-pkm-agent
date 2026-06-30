@@ -41,7 +41,7 @@ if has_sb3:
             scalars_space = observation_space.spaces['scalars']
             
             self.num_cards = card_ids_space.shape[0] # 90
-            self.num_scalars = scalars_space.shape[0] # 83
+            self.num_scalars = scalars_space.shape[0] # 111
             
             features_dim = (self.num_cards * embedding_dim) + self.num_scalars
             

@@ -177,9 +177,13 @@ def vectorize_state(obs_dict, my_index):
     else:
         # Si no hay opciones, permitimos la acción 0 para pasar
         action_mask[0] = 1
-
+    
+    # Rellenar con ceros hasta 111 por si acaso, y cortar a 111
+    while len(scalars) < 111:
+        scalars.append(0.0)
+        
     return {
         "card_ids": np.array(card_ids, dtype=np.int32),
-        "scalars": np.array(scalars, dtype=np.float32),
+        "scalars": np.array(scalars[:111], dtype=np.float32),
         "action_mask": action_mask
     }

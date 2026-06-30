@@ -168,6 +168,8 @@ def vectorize_state(obs_dict, my_index):
     select_dict = obs_dict.get('select', {})
     scalars.append(float(select_dict.get('type', -1)))
     scalars.append(float(select_dict.get('context', -1)))
+    scalars.append(float(select_dict.get('minCount', 1)))
+    scalars.append(float(select_dict.get('maxCount', 1)))
     
     # --- 2. Action Mask ---
     action_mask = np.zeros(MAX_OPTIONS, dtype=np.int8)

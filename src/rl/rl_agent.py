@@ -50,9 +50,19 @@ def rl_agent(obs_dict, config=None):
     
     # 4. Predecir con el Cerebro
     try:
-        # MaskablePPO necesita las observaciones y la máscara
-        action, _states = _model.predict(vec, action_masks=action_mask, deterministic=True)
-        return [int(action)]
+        min_count = obs_dict.get('select', {}).get('minCount', 1)
+        ans = []
+        current_mask = action_mask.copy()
+        for _ in range(max(1, min_count)):
+            if not any(current_mask):
+                break
+            action, _states = _model.predict(vec, action_masks=current_mask, deterministic=True)
+            ans.append(int(action))
+            current_mask[int(action)] = 0
+            
+        if not ans:
+            ans = [0]
+        return ans
     except Exception as e:
         print(f"Agent Error predict: {e}")
         import random

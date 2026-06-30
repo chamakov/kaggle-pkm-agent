@@ -17,13 +17,25 @@ def evaluate_model(model_path, num_games=50, opponent="random"):
         
     print(f"Cargando modelo desde: {model_path}")
     try:
-        model = MaskablePPO.load(model_path)
+        from src.rl.train import CardEmbeddingExtractor
+        custom_objects = {
+            "learning_rate": 0.0,
+            "lr_schedule": lambda _: 0.0,
+            "clip_range": lambda _: 0.2,
+            "policy_kwargs": dict(
+                features_extractor_class=CardEmbeddingExtractor,
+                features_extractor_kwargs=dict(embedding_dim=32),
+                net_arch=[256, 256, 256]
+            )
+        }
+        # It's crucial to load the env to correctly set up the extractor
+        env = CabtGymEnv(opponent_agent=opponent)
+        model = MaskablePPO.load(model_path, env=env, custom_objects=custom_objects)
     except Exception as e:
         print(f"Error al cargar el modelo: {e}")
         return
     
-    print(f"Inicializando entorno vs {opponent}...")
-    env = CabtGymEnv(opponent_agent=opponent)
+
     
     wins = 0
     losses = 0
