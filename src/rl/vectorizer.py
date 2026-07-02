@@ -2,8 +2,94 @@ import numpy as np
 
 MAX_HAND_SIZE = 30
 MAX_BENCH_SIZE = 5
-MAX_OPTIONS = 150
+MAX_OPTIONS = 700
 MAX_CARD_ID = 1300  # Added padding above 1267 just in case
+
+def map_env_to_semantic_action(opt_idx: int, obs_dict: dict) -> int:
+    my_index = obs_dict.get('current', {}).get('yourIndex', 0)
+    options = obs_dict.get('select', {}).get('option', [])
+    if opt_idx < 0 or opt_idx >= len(options):
+        return 650
+        
+    opt = options[opt_idx]
+    opt_type = opt.get('type', -1)
+    
+    if opt_type == 14: # END
+        return 0
+    elif opt_type == 12: # RETREAT
+        return 1
+    elif opt_type == 13: # ATTACK
+        attack_options = [o for o in options if o.get('type') == 13]
+        attack_options.sort(key=lambda x: x.get('attackId', 0) if isinstance(x, dict) else getattr(x, 'attackId', 0))
+        for i, ao in enumerate(attack_options):
+            if ao == opt:
+                return 2 + min(i, 3)
+        return 2
+    elif opt_type == 7: # PLAY
+        idx = opt.get('index', 0)
+        return 6 + min(idx, 29)
+    elif opt_type == 10: # ABILITY
+        area = opt.get('area', -1)
+        idx = opt.get('index', 0)
+        if area == 2: # HAND
+            return 36 + min(idx, 29)
+        elif area == 4: # ACTIVE
+            return 66
+        elif area == 5: # BENCH
+            return 67 + min(idx, 4)
+    elif opt_type in (8, 9): # ATTACH (8) or EVOLVE (9)
+        src_idx = opt.get('index', 0)
+        in_play_area = opt.get('inPlayArea', -1)
+        in_play_idx = opt.get('inPlayIndex', 0)
+        target = 0
+        if in_play_area == 5: # BENCH
+            target = 1 + min(in_play_idx, 4)
+        offset = 72 if opt_type == 8 else 252
+        return offset + min(src_idx, 29) * 6 + target
+    elif opt_type == 3: # CARD
+        area = opt.get('area', -1)
+        idx = opt.get('index', 0)
+        player = opt.get('playerIndex', my_index)
+        if area == 1: # DECK
+            return 432 + min(idx, 59)
+        elif area == 2: # HAND
+            return 492 + min(idx, 29)
+        elif area == 3: # DISCARD
+            return 522 + min(idx, 59)
+        elif area == 6: # PRIZE
+            return 582 + min(idx, 5)
+        elif area == 4: # ACTIVE
+            return 588 if player == my_index else 589
+        elif area == 5: # BENCH
+            return 590 + min(idx, 4) if player == my_index else 595 + min(idx, 4)
+        elif area == 12: # LOOKING
+            return 600 + min(idx, 9)
+    elif opt_type == 0: # NUMBER
+        num = opt.get('number', 0)
+        return 610 + min(num, 19)
+    elif opt_type == 1: # YES
+        return 630
+    elif opt_type == 2: # NO
+        return 631
+    elif opt_type == 11: # DISCARD
+        area = opt.get('area', -1)
+        idx = opt.get('index', 0)
+        if area == 4:
+            return 632
+        elif area == 5:
+            return 633 + min(idx, 4)
+            
+    return 650 + min(opt_idx, 49)
+
+def map_semantic_to_env_action(semantic_action: int, obs_dict: dict) -> int:
+    options = obs_dict.get('select', {}).get('option', [])
+    if not options:
+        return 0
+    for i in range(len(options)):
+        if map_env_to_semantic_action(i, obs_dict) == semantic_action:
+            return i
+    return 0 # Fallback if action is invalid
+
 
 def get_pokemon_stats(pokemon_obj):
     """Extrae el ID y estadísticas de un Pokémon de cg.api.Pokemon o diccionario"""
@@ -172,8 +258,10 @@ def vectorize_state(obs_dict, my_index):
     num_options = len(options)
     
     if num_options > 0:
-        for i in range(min(num_options, MAX_OPTIONS)):
-            action_mask[i] = 1
+        for i in range(num_options):
+            sem_act = map_env_to_semantic_action(i, obs_dict)
+            if 0 <= sem_act < MAX_OPTIONS:
+                action_mask[sem_act] = 1
     else:
         # Si no hay opciones, permitimos la acción 0 para pasar
         action_mask[0] = 1

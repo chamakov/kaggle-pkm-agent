@@ -6,10 +6,10 @@ from kaggle_environments import make
 import sys
 import os
 try:
-    from src.rl.vectorizer import vectorize_state, MAX_OPTIONS, MAX_CARD_ID
+    from src.rl.vectorizer import vectorize_state, MAX_OPTIONS, MAX_CARD_ID, map_semantic_to_env_action
 except ImportError:
     sys.path.append(os.getcwd())
-    from src.rl.vectorizer import vectorize_state, MAX_OPTIONS, MAX_CARD_ID
+    from src.rl.vectorizer import vectorize_state, MAX_OPTIONS, MAX_CARD_ID, map_semantic_to_env_action
 
 class CabtGymEnv(gym.Env):
     def __init__(self, opponent_agent=None, my_index=0):
@@ -228,41 +228,44 @@ class CabtGymEnv(gym.Env):
         return state
         
     def step(self, action):
-        my_action = [int(action)]
+        semantic_action = int(action)
+        obs_dict = self._get_obs_dict(self._last_state)
         
         # Check if the action is valid using the action mask
         # Since we use MaskablePPO, invalid actions are never sampled by the policy!
         # But we double check just in case (e.g. if a random fallback occurs).
         is_valid = False
         if self._last_state is not None:
-            if self.current_action_mask[int(action)] == 1:
+            if 0 <= semantic_action < len(self.current_action_mask) and self.current_action_mask[semantic_action] == 1:
                 is_valid = True
                 
         if not is_valid:
-            # Fallback to passing turn or first valid option if MaskablePPO somehow fails
+            # Fallback to first valid option if MaskablePPO somehow fails
             valid_indices = [i for i, m in enumerate(self.current_action_mask) if m == 1]
             if valid_indices:
-                my_action = [valid_indices[0]]
+                semantic_action = valid_indices[0]
             else:
-                my_action = [0]
+                semantic_action = 0
+                
+        env_action = map_semantic_to_env_action(semantic_action, obs_dict)
+        my_action = [env_action]
         
         # Handle multi-select actions
-        obs_dict = self._get_obs_dict(self._last_state)
         select_dict = obs_dict.get('select', {})
         min_count = select_dict.get('minCount', 1)
         
         if min_count > 1:
             import random
             remaining_mask = self.current_action_mask.copy()
-            if my_action[0] < len(remaining_mask):
-                remaining_mask[my_action[0]] = 0
+            if semantic_action < len(remaining_mask):
+                remaining_mask[semantic_action] = 0
             for _ in range(min_count - 1):
                 valid_idx = [i for i, m in enumerate(remaining_mask) if m == 1]
                 if not valid_idx:
                     break
-                extra = random.choice(valid_idx)
-                my_action.append(extra)
-                remaining_mask[extra] = 0
+                extra_sem = random.choice(valid_idx)
+                my_action.append(map_semantic_to_env_action(extra_sem, obs_dict))
+                remaining_mask[extra_sem] = 0
         
         opp_obs = self._last_state[self.opp_index].observation
         opp_opts = opp_obs.get('select', {})
@@ -295,7 +298,7 @@ class CabtGymEnv(gym.Env):
         # Obtain the selected action object to shape rewards
         last_obs = self._get_obs_dict(self._last_state)
         options = last_obs.get('select', {}).get('option', [])
-        action_obj = options[int(action)] if options and int(action) < len(options) else {}
+        action_obj = options[env_action] if options and env_action < len(options) else {}
         action_type = action_obj.get('type')
         
         intermediate_reward = 0.0
@@ -360,77 +363,72 @@ class CabtGymEnv(gym.Env):
                 # ============================================================
                 if played_card_id == 162:  # Slowpoke
                     if slowking_line_count < 3:
-                        intermediate_reward += 3.0  # Strong: we want 2-3 Slowpoke/Slowking lines
+                        intermediate_reward += 0.5  # Reduced from 3.0
                     else:
-                        intermediate_reward += 0.5  # Already have enough — marginal value
+                        intermediate_reward += 0.1  # Marginal value
 
                 # ============================================================
                 # TIER 1 — Latias ex: free-retreat engine, bench ASAP
                 # ============================================================
                 elif played_card_id == 184:  # Latias ex
                     if 184 not in bench_ids:
-                        intermediate_reward += 2.5  # First Latias: essential
+                        intermediate_reward += 0.5  # Reduced from 2.5
                     else:
-                        intermediate_reward += 0.2  # Second: usually redundant
+                        intermediate_reward += 0.0  
 
                 # ============================================================
                 # TIER 2 — Secondary attackers. Value depends on board state.
-                # Condition: we have a Slowking line, OR we're in late game.
                 # ============================================================
-                elif played_card_id == 756:  # Kangaskhan ex — heavy hitter
+                elif played_card_id == 756:  # Kangaskhan ex
                     if has_slowking or late_game:
                         if 756 not in bench_ids:
-                            intermediate_reward += 2.0  # First Kangaskhan: backup attacker
+                            intermediate_reward += 0.5
                         else:
-                            intermediate_reward += 0.2  # Already have one
+                            intermediate_reward += 0.1
                     else:
-                        intermediate_reward += 0.5  # Setup phase — not a priority yet
+                        intermediate_reward += 0.1
 
-                elif played_card_id == 272:  # Lillie's Clefairy ex — tech attacker
+                elif played_card_id == 272:  # Lillie's Clefairy ex
                     if has_slowking or late_game:
                         if 272 not in bench_ids:
-                            intermediate_reward += 1.5
+                            intermediate_reward += 0.4
                         else:
-                            intermediate_reward += 0.2
+                            intermediate_reward += 0.1
                     else:
-                        intermediate_reward += 0.3
+                        intermediate_reward += 0.1
 
-                elif played_card_id == 140:  # Fezandipiti ex — situational attacker
-                    # Fezandipiti has a useful attack (Dark Feather can KO basics)
-                    # Only valuable in late game or as last resort, never as primary
+                elif played_card_id == 140:  # Fezandipiti ex
                     if late_game and bench_slots_free > 1:
-                        intermediate_reward += 1.0  # Late-game emergency attacker
+                        intermediate_reward += 0.4
                     elif has_slowking and bench_slots_free > 2:
-                        intermediate_reward += 0.0  # Neutral: bench is crowded
+                        intermediate_reward += 0.0
                     else:
-                        intermediate_reward -= 1.5  # Early game or no room: discourage
+                        intermediate_reward -= 0.5
 
                 # ============================================================
-                # TIER 3 — Support / pivot Pokemon (minor value)
+                # TIER 3 — Support / pivot Pokemon
                 # ============================================================
-                elif played_card_id == 144:  # Kyurem — bench blocker/pivot
+                elif played_card_id == 144:  # Kyurem
                     if bench_slots_free > 2:
-                        intermediate_reward += 0.8
+                        intermediate_reward += 0.3
                     else:
-                        intermediate_reward += 0.1  # Don't waste bench slots
+                        intermediate_reward += 0.0
 
-                elif played_card_id in {115, 224, 880, 183, 1071}:  # Pure bench fodder
-                    intermediate_reward -= 0.5  # Minor penalty: fills bench without purpose
+                elif played_card_id in {115, 224, 880, 183, 1071}:
+                    intermediate_reward -= 0.2
 
                 else:
-                    intermediate_reward += 0.1
+                    intermediate_reward += 0.0
 
             elif played_card_id in TRAINER_IDS:
-                # Trainer card played from hand (supporter/item/stadium/tool)
-                if played_card_id == 1248:  # Academy at Night (stadium)
-                    intermediate_reward += 1.0
-                elif played_card_id in {1227, 1188, 1210, 1231, 1184}:  # Supporters
-                    intermediate_reward += 0.5
-                elif played_card_id in {1152, 1121, 1097, 1146, 1092, 1123, 1156}:  # Items/tools
+                if played_card_id == 1248:  # Academy at Night
                     intermediate_reward += 0.3
+                elif played_card_id in {1227, 1188, 1210, 1231, 1184}:
+                    intermediate_reward += 0.2
+                elif played_card_id in {1152, 1121, 1097, 1146, 1092, 1123, 1156}:
+                    intermediate_reward += 0.2
             elif played_card_id in ENERGY_IDS:
-                # Energy played from hand (manual attach — should rarely happen here)
-                intermediate_reward += 0.2
+                intermediate_reward += 0.3
 
         elif action_type == 3:  # OptionType.CARD — sub-selection (pick a card from revealed set)
             # This fires during Ciphermaniac, Ultra Ball, etc.
@@ -614,18 +612,23 @@ class CabtGymEnv(gym.Env):
                             hand = my_state.get('hand', [])
                             has_energy = any(c.get('id') in [5, 9, 19] for c in hand if isinstance(c, dict))
                             if has_energy:
-                                intermediate_reward -= 2.0
+                                intermediate_reward -= 0.4
                 except:
-                    intermediate_reward -= 1.0
+                    intermediate_reward -= 0.2
 
-        # ----------------------------------------------------------------
-        # Prize-taken intermediate reward: reward each KO that takes a prize
-        # ----------------------------------------------------------------
+        if action_type == 13: # OptionType.ATTACK
+            attack_id = action_obj.get('attackId', 0)
+            damage = self._attack_damage_cache.get(attack_id, 0)
+            if damage > 0:
+                # Attacking is highly encouraged. Base 2.0 + 1.0 per 50 damage
+                intermediate_reward += 2.0 + (damage / 50.0)
+            else:
+                intermediate_reward += 1.0 # Utility attacks are good too
+
+        # ============================================================
+        # PRIZE & TERMINAL REWARDS (Crucial for correct behavior)
+        # ============================================================
         def get_my_prize_count(st):
-            """My remaining prize cards (starts at 6, decreases as opp KOs my pokemon? No...)
-            Actually in TCG: when YOU KO an opponent's pokemon, YOU take a prize card from YOUR pile.
-            So YOUR prize count goes DOWN when you KO opponent pokemon.
-            """
             if st is None: return 6
             try:
                 obs = st[self.my_index].observation
@@ -636,7 +639,6 @@ class CabtGymEnv(gym.Env):
             return 6
 
         def get_opp_prize_count(st):
-            """Opponent's remaining prize cards (starts at 6, decreases when I KO their pokemon)."""
             if st is None: return 6
             try:
                 obs = st[self.my_index].observation
@@ -650,27 +652,26 @@ class CabtGymEnv(gym.Env):
         my_prizes_after   = get_my_prize_count(state)
         opp_prizes_after  = get_opp_prize_count(state)
 
-        # When MY prize count decreases, it means I KO'd an opponent pokemon → reward
+        # Huge reward for knocking out opponent Pokemon
         if my_prizes_after < my_prizes_before:
-            intermediate_reward += 5.0 * (my_prizes_before - my_prizes_after)
+            intermediate_reward += 10.0 * (my_prizes_before - my_prizes_after)
 
         # Terminal reward
         final_reward = state[self.my_index].reward if state[self.my_index].reward is not None else 0.0
 
         if done:
             if final_reward > 0:
-                # Won — but HOW? Check if opponent still has prizes (deckout) or not (prize win)
                 if opp_prizes_after > 0:
-                    # Won by deckout — penalize, we never attacked enough to take prizes
-                    final_reward = -5.0
+                    # Deckout win - Neutral/slightly negative to discourage stalling
+                    final_reward = -2.0
                 else:
-                    # Won by taking all opponent prizes — the RIGHT way to win
-                    final_reward = 10.0
+                    # Prize win - The ultimate goal
+                    final_reward = 50.0
             elif final_reward < 0:
-                final_reward = -10.0  # Amplify loss signal
+                final_reward = -50.0  # Massive penalty for losing
 
-        # Scale intermediate rewards — must stay clearly below terminal win/loss
-        SHAPING_SCALE = 0.2
+        # Scale intermediate rewards so they don't overshadow terminal win/loss
+        SHAPING_SCALE = 0.1
         intermediate_reward *= SHAPING_SCALE
         
         reward = final_reward + intermediate_reward

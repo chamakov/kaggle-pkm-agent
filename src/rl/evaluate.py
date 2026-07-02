@@ -62,9 +62,13 @@ def evaluate_model(model_path, num_games=50, opponent="random"):
         total_steps += steps
         invalid_moves_total += invalid_moves_episode
         
-        # Consideramos recompensa > 0 como victoria contra random
-        if reward > 0:
-            wins += 1
+        # Real win/loss is in the actual game state
+        if env._last_state is not None and env._last_state[env.my_index].reward is not None:
+            game_reward = env._last_state[env.my_index].reward
+            if game_reward > 0:
+                wins += 1
+            else:
+                losses += 1
         else:
             losses += 1
             

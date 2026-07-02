@@ -116,8 +116,18 @@ def train_model():
         new_logger = configure(results_dir, ["stdout", "csv", "tensorboard"])
         model.set_logger(new_logger)
         
-        # Eval Env - ALWAYS vs heuristic to benchmark progress properly
-        eval_env = make_env(opponent="heuristic", rank=99)()
+        # Eval Env - Mix of opponents to benchmark progress properly across the meta
+        # Usamos 8 entornos en paralelo para exprimir la CPU y acelerar la evaluación (2 de cada)
+        eval_env = SubprocVecEnv([
+            make_env(opponent="heuristic", rank=101),
+            make_env(opponent="lucario", rank=102),
+            make_env(opponent="slowking", rank=103),
+            make_env(opponent="random", rank=104),
+            make_env(opponent="heuristic", rank=105),
+            make_env(opponent="lucario", rank=106),
+            make_env(opponent="slowking", rank=107),
+            make_env(opponent="random", rank=108)
+        ])
         
         eval_callback = MaskableEvalCallback(
             eval_env,
@@ -126,7 +136,7 @@ def train_model():
             eval_freq=10000 // num_envs,
             deterministic=True,
             render=False,
-            n_eval_episodes=30, # Aumentado a 30 episodios para evaluación robusta en TCG
+            n_eval_episodes=32, # Múltiplo de 8 para que cada proceso juegue exactamente 4 partidas
             verbose=1
         )
         
@@ -139,26 +149,29 @@ def train_model():
                 self.wins = {"heuristic": 0, "random": 0, "lucario": 0, "unknown": 0}
                 self.matches = {"heuristic": 0, "random": 0, "lucario": 0, "unknown": 0}
 
+                self.wins = {"heuristic": 0, "random": 0, "lucario": 0, "unknown": 0, "slowking": 0}
+                self.matches = {"heuristic": 0, "random": 0, "lucario": 0, "unknown": 0, "slowking": 0}
+
             def _on_step(self) -> bool:
-                for idx, done in enumerate(self.locals.get("dones", [])):
-                    if done:
-                        info = self.locals.get("infos", [{}])[idx]
-                        opponent = info.get("opponent", "unknown")
-                        is_success = info.get("is_success", False)
+                for info in self.locals.get("infos", []):
+                    if "is_success" in info:
+                        # Find the opponent from the env
+                        opp = info.get("opponent", "unknown")
+                        if opp not in self.matches:
+                            self.matches[opp] = 0
+                            self.wins[opp] = 0
+                        self.matches[opp] += 1
+                        if info["is_success"]:
+                            self.wins[opp] += 1
                         
-                        if opponent not in self.matches:
-                            self.matches[opponent] = 0
-                            self.wins[opponent] = 0
-                            
-                        self.matches[opponent] += 1
-                        if is_success:
-                            self.wins[opponent] += 1
-                            
-                        if sum(self.matches.values()) % 50 == 0:
-                            for opp in self.matches.keys():
-                                if self.matches[opp] > 0:
-                                    win_rate = self.wins[opp] / self.matches[opp]
-                                    self.logger.record(f"win_rate/{opp}", win_rate)
+                if self.num_timesteps % (10000 // num_envs * num_envs) == 0: # Roughly every eval freq
+                    for opp in ["heuristic", "lucario", "random", "slowking"]:
+                        if self.matches.get(opp, 0) > 0:
+                            wr = self.wins[opp] / self.matches[opp]
+                            self.logger.record(f"win_rate/{opp}", wr)
+                            # Reset para ventana móvil
+                            self.wins[opp] = 0
+                            self.matches[opp] = 0
                 return True
         
         class RotatedCheckpointCallback(CheckpointCallback):
