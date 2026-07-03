@@ -140,12 +140,7 @@ class CabtGymEnv(gym.Env):
         return state[self.my_index].observation
         
     def _is_my_turn(self, state):
-        obs_dict = self._get_obs_dict(state)
-        # It's our turn if we have options to select
-        opts = obs_dict.get('select', {})
-        if opts is None:
-            return False
-        return len(opts.get('option', [])) > 0
+        return state[self.my_index].status == 'ACTIVE'
         
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -210,7 +205,9 @@ class CabtGymEnv(gym.Env):
                             opp_action.extend(valid_indices[:max(0, min_count - len(opp_action))])
                     except Exception:
                         import random
-                        opp_action = [random.randint(0, num_opts - 1)]
+                        indices = list(range(num_opts))
+                        random.shuffle(indices)
+                        opp_action = indices[:max(1, min_count)]
                 else:
                     # Random opponent — must respect minCount
                     import random
@@ -279,10 +276,16 @@ class CabtGymEnv(gym.Env):
                     opp_action = actions_returned if isinstance(actions_returned, list) else [actions_returned]
                 except Exception as e:
                     import random
-                    opp_action = [random.randint(0, len(opp_opts['option'])-1)]
+                    opp_min_count = opp_opts.get('minCount', 1)
+                    indices = list(range(len(opp_opts.get('option', []))))
+                    random.shuffle(indices)
+                    opp_action = indices[:max(1, opp_min_count)]
             else:
                 import random
-                opp_action = [random.randint(0, len(opp_opts['option'])-1)]
+                opp_min_count = opp_opts.get('minCount', 1)
+                indices = list(range(len(opp_opts.get('option', []))))
+                random.shuffle(indices)
+                opp_action = indices[:max(1, opp_min_count)]
         else:
             opp_action = []
             
@@ -678,14 +681,28 @@ class CabtGymEnv(gym.Env):
         
         if not done:
             state = self._fast_forward(state)
-            # Recheck done after fast_forward
             done = self.env.done
             
         self._last_state = state
+        
+        # Re-evaluate final_reward and prizes after fast_forward
+        if done:
+            final_reward = state[self.my_index].reward if state[self.my_index].reward is not None else 0.0
+            opp_prizes_after = get_opp_prize_count(state)
+            if final_reward > 0:
+                if opp_prizes_after > 0:
+                    final_reward = -2.0
+                else:
+                    final_reward = 50.0
+            elif final_reward < 0:
+                final_reward = -50.0
+            # Ensure reward incorporates terminal event
+            reward = final_reward + intermediate_reward
+        
         vec = vectorize_state(self._get_obs_dict(state), self.my_index)
         self.current_action_mask = vec.pop("action_mask")
         info = {
-            "is_success": final_reward > 0 if done else False,
+            "is_success": state[self.my_index].reward > 0 if done and state[self.my_index].reward is not None else False,
             "opponent": getattr(self, 'current_opponent_type', 'unknown')
         }
         
