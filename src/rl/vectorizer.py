@@ -247,10 +247,18 @@ def vectorize_state(obs_dict, my_index):
     my_discard = my_state.discard if hasattr(my_state, 'discard') else []
     scalars.append(float(len(my_discard)))
     
-    # Select info
+    # Select info (One-Hot Encoded)
     select_dict = obs_dict.get('select', {})
-    scalars.append(float(select_dict.get('type', -1)))
-    scalars.append(float(select_dict.get('context', -1)))
+    sel_type = select_dict.get('type', -1)
+    sel_context = select_dict.get('context', -1)
+    
+    # 15 dims for select.type (0 to 14)
+    for i in range(15):
+        scalars.append(1.0 if sel_type == i else 0.0)
+        
+    # 5 dims for select.context (0 to 4)
+    for i in range(5):
+        scalars.append(1.0 if sel_context == i else 0.0)
     
     # --- 2. Action Mask ---
     action_mask = np.zeros(MAX_OPTIONS, dtype=np.int8)
@@ -259,19 +267,49 @@ def vectorize_state(obs_dict, my_index):
     
     if num_options > 0:
         for i in range(num_options):
-            sem_act = map_env_to_semantic_action(i, obs_dict)
-            if 0 <= sem_act < MAX_OPTIONS:
-                action_mask[sem_act] = 1
+            opt = options[i]
+            opt_type = opt.get('type', -1)
+            
+            # --- SYNERGY MASKING: Do not attach energy to Pokemon that are already full ---
+            is_valid_synergy = True
+            if opt_type == 8: # OptionType.ATTACH
+                # Check how many energies the target has
+                in_play_area = opt.get('inPlayArea', -1)
+                in_play_idx = opt.get('inPlayIndex', 0)
+                target = None
+                if in_play_area == 4 and my_state.active: # ACTIVE
+                    target = my_state.active[0]
+                elif in_play_area == 5 and in_play_idx < len(my_state.bench): # BENCH
+                    target = my_state.bench[in_play_idx]
+                
+                if target:
+                    # if target is a dict or object
+                    en_cards = target.get('energyCards', []) if isinstance(target, dict) else getattr(target, 'energyCards', [])
+                    target_id = target.get('id', -1) if isinstance(target, dict) else getattr(target, 'id', -1)
+                    target_id = (target_id + 1) if target_id != -1 else 0
+                    
+                    # Slowking/Slowpoke usually needs 3 max, Latias needs 1 max. Let's set a hard cap of 3.
+                    max_energy = 3
+                    if target_id == 184: max_energy = 1 # Latias ex
+                    elif target_id == 144: max_energy = 3 # Kyurem
+                    
+                    if len(en_cards) >= max_energy:
+                        is_valid_synergy = False
+            
+            if is_valid_synergy:
+                sem_act = map_env_to_semantic_action(i, obs_dict)
+                if 0 <= sem_act < MAX_OPTIONS:
+                    action_mask[sem_act] = 1
     else:
         # Si no hay opciones, permitimos la acción 0 para pasar
         action_mask[0] = 1
     
-    # Rellenar con ceros hasta 111 por si acaso, y cortar a 111
-    while len(scalars) < 111:
+    # Rellenar con ceros hasta 130 por si acaso, y cortar a 130
+    while len(scalars) < 130:
         scalars.append(0.0)
         
     return {
         "card_ids": np.array(card_ids, dtype=np.int32),
-        "scalars": np.array(scalars[:111], dtype=np.float32),
+        "scalars": np.array(scalars[:130], dtype=np.float32),
         "action_mask": action_mask
     }

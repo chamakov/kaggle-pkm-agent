@@ -94,23 +94,31 @@ def train_model():
                 return progress_remaining * initial_value
             return func
             
-        # Tuning hyperparameters for TCG
-        model = MaskablePPO(
-            "MultiInputPolicy", 
-            env, 
-            verbose=1, 
-            tensorboard_log=tensorboard_dir,
-            n_steps=4096 // num_envs, # Total batch is n_steps * num_envs
-            batch_size=512,
-            gamma=0.995,            # Better credit assignment for delayed win/loss
-            learning_rate=linear_schedule(0.0003),
-            ent_coef=0.01,
-            policy_kwargs=dict(
-                features_extractor_class=CardEmbeddingExtractor,
-                features_extractor_kwargs=dict(embedding_dim=32),
-                net_arch=[256, 256, 256]
+        model_path = os.path.join(base_save_dir, "best_models", "best_model.zip")
+        if os.path.exists(model_path):
+            print(f"🔄 Cargando modelo existente desde {model_path} (Fine-Tuning)")
+            model = MaskablePPO.load(model_path, env=env, tensorboard_log=tensorboard_dir)
+            
+            # Reset learning rate schedule for the new training run
+            model.learning_rate = linear_schedule(0.0003)
+        else:
+            print("🚀 Iniciando entrenamiento desde cero (Tabula Rasa)")
+            model = MaskablePPO(
+                "MultiInputPolicy", 
+                env, 
+                verbose=1, 
+                tensorboard_log=tensorboard_dir,
+                n_steps=4096 // num_envs,
+                batch_size=512,
+                gamma=0.995,
+                learning_rate=linear_schedule(0.0003),
+                ent_coef=0.01,
+                policy_kwargs=dict(
+                    features_extractor_class=CardEmbeddingExtractor,
+                    features_extractor_kwargs=dict(embedding_dim=32),
+                    net_arch=[256, 256, 256]
+                )
             )
-        )
         
         from stable_baselines3.common.logger import configure
         new_logger = configure(results_dir, ["stdout", "csv", "tensorboard"])

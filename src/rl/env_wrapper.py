@@ -67,7 +67,7 @@ class CabtGymEnv(gym.Env):
             
         self.observation_space = spaces.Dict({
             "card_ids": spaces.Box(low=0, high=MAX_CARD_ID, shape=(90,), dtype=np.int32),
-            "scalars": spaces.Box(low=-1000.0, high=1000.0, shape=(111,), dtype=np.float32),
+            "scalars": spaces.Box(low=-1000.0, high=1000.0, shape=(130,), dtype=np.float32),
         })
         
         self.current_action_mask = np.ones(MAX_OPTIONS, dtype=np.int8)
@@ -671,13 +671,21 @@ class CabtGymEnv(gym.Env):
                     # Prize win - The ultimate goal
                     final_reward = 50.0
             elif final_reward < 0:
-                final_reward = -50.0  # Massive penalty for losing
+                # Did we deck out? Check if we have 0 cards in deck
+                my_deck_count = len(state[self.my_index].observation['current']['players'][self.my_index].get('deck', [])) if isinstance(state[self.my_index].observation, dict) and 'current' in state[self.my_index].observation else 1
+                if my_deck_count == 0:
+                    final_reward = -100.0  # Double penalty for decking out to strongly discourage it
+                else:
+                    final_reward = -50.0
 
         # Scale intermediate rewards so they don't overshadow terminal win/loss
         SHAPING_SCALE = 0.1
         intermediate_reward *= SHAPING_SCALE
         
-        reward = final_reward + intermediate_reward
+        # Step penalty to prevent stalling and farming intermediate rewards
+        step_penalty = -0.1
+        
+        reward = final_reward + intermediate_reward + step_penalty
         
         if not done:
             state = self._fast_forward(state)
