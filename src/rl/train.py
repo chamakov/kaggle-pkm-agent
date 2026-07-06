@@ -185,7 +185,8 @@ def train_model():
 
             def _on_step(self) -> bool:
                 for info in self.locals.get("infos", []):
-                    if "is_success" in info:
+                    # Only log when the episode ends (Monitor wrapper adds the "episode" key)
+                    if "episode" in info and "is_success" in info:
                         # Find the opponent from the env
                         opp = info.get("opponent", "unknown")
                         if opp not in self.matches:
