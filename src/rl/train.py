@@ -94,20 +94,29 @@ def train_model():
                 return progress_remaining * initial_value
             return func
             
-        # Rutas comunes donde el usuario podría haber subido o guardado el best_model.zip
-        model_paths_to_check = [
-            os.path.join(base_save_dir, "best_models", "best_model.zip"), # Ruta generada automáticamente
-            os.path.join(base_save_dir, "best_model.zip"),                # Raíz del drive/working
-            "best_model.zip",                                             # Directorio actual (notebook)
-            "/kaggle/working/best_model.zip",                             # Kaggle working root
-            "/kaggle/input/pokemon-best-model/best_model.zip"             # Posible dataset de Kaggle
-        ]
-        
+        # Búsqueda dinámica y recursiva del modelo (ideal para Kaggle datasets con nombres variables)
         model_path = None
-        for path in model_paths_to_check:
-            if os.path.exists(path):
-                model_path = path
-                break
+        
+        # 1. Buscar en Kaggle Inputs (Datasets)
+        if os.path.exists("/kaggle/input"):
+            for root, dirs, files in os.walk("/kaggle/input"):
+                if "best_model.zip" in files:
+                    model_path = os.path.join(root, "best_model.zip")
+                    break
+                    
+        # 2. Buscar localmente o en Colab/Working
+        if not model_path:
+            for base_dir in [base_save_dir, ".", "/kaggle/working", "/content"]:
+                if os.path.exists(base_dir):
+                    for root, dirs, files in os.walk(base_dir):
+                        # Evitar buscar dentro de entornos virtuales u ocultos muy profundos para ahorrar tiempo
+                        if '.git' in root or '.env' in root:
+                            continue
+                        if "best_model.zip" in files:
+                            model_path = os.path.join(root, "best_model.zip")
+                            break
+                if model_path:
+                    break
 
         if model_path:
             print(f"🔄 Cargando modelo existente desde {model_path} (Fine-Tuning)")
