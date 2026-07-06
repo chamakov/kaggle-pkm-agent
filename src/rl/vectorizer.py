@@ -247,18 +247,10 @@ def vectorize_state(obs_dict, my_index):
     my_discard = my_state.discard if hasattr(my_state, 'discard') else []
     scalars.append(float(len(my_discard)))
     
-    # Select info (One-Hot Encoded)
+    # Select info
     select_dict = obs_dict.get('select', {})
-    sel_type = select_dict.get('type', -1)
-    sel_context = select_dict.get('context', -1)
-    
-    # 15 dims for select.type (0 to 14)
-    for i in range(15):
-        scalars.append(1.0 if sel_type == i else 0.0)
-        
-    # 5 dims for select.context (0 to 4)
-    for i in range(5):
-        scalars.append(1.0 if sel_context == i else 0.0)
+    scalars.append(float(select_dict.get('type', -1)))
+    scalars.append(float(select_dict.get('context', -1)))
     
     # --- 2. Action Mask ---
     action_mask = np.zeros(MAX_OPTIONS, dtype=np.int8)
@@ -296,8 +288,17 @@ def vectorize_state(obs_dict, my_index):
                     elif target_id == 184:
                         max_energy = 1
                     else:
-                        # Block energy on Bidoof, Bibarel, Fezandipiti, Kyurem, etc.
-                        max_energy = 0
+                        # Utility Pokemon
+                        if in_play_area == 4: # ACTIVE spot
+                            # If they have retreat cost 1, allow 1 energy to retreat
+                            if target_id in {140, 115}: # Fezandipiti, Bidoof
+                                max_energy = 1
+                            else:
+                                # High retreat cost (Bibarel, Kyurem) -> let them get knocked out to save energy
+                                max_energy = 0
+                        else:
+                            # If BENCHED, block energy on utility pokemon
+                            max_energy = 0
                     
                     if len(en_cards) >= max_energy:
                         is_valid_synergy = False
@@ -310,12 +311,12 @@ def vectorize_state(obs_dict, my_index):
         # Si no hay opciones, permitimos la acción 0 para pasar
         action_mask[0] = 1
     
-    # Rellenar con ceros hasta 130 por si acaso, y cortar a 130
-    while len(scalars) < 130:
+    # Rellenar con ceros hasta 111 por si acaso, y cortar a 111
+    while len(scalars) < 111:
         scalars.append(0.0)
         
     return {
         "card_ids": np.array(card_ids, dtype=np.int32),
-        "scalars": np.array(scalars[:130], dtype=np.float32),
+        "scalars": np.array(scalars[:111], dtype=np.float32),
         "action_mask": action_mask
     }

@@ -67,7 +67,7 @@ class CabtGymEnv(gym.Env):
             
         self.observation_space = spaces.Dict({
             "card_ids": spaces.Box(low=0, high=MAX_CARD_ID, shape=(90,), dtype=np.int32),
-            "scalars": spaces.Box(low=-1000.0, high=1000.0, shape=(130,), dtype=np.float32),
+            "scalars": spaces.Box(low=-1000.0, high=1000.0, shape=(111,), dtype=np.float32),
         })
         
         self.current_action_mask = np.ones(MAX_OPTIONS, dtype=np.int8)
