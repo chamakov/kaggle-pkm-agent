@@ -375,7 +375,7 @@ class CabtGymEnv(gym.Env):
                 # ============================================================
                 elif played_card_id == 184:  # Latias ex
                     if 184 not in bench_ids:
-                        intermediate_reward += 0.5  # Reduced from 2.5
+                        intermediate_reward += 2.5  # Increased priority as per user request
                     else:
                         intermediate_reward += 0.0  
 
@@ -482,8 +482,10 @@ class CabtGymEnv(gym.Env):
                 elif played_card_id == 756:
                     intermediate_reward += 1.5
                 elif played_card_id == 184:
-                    intermediate_reward += 0.5
+                    # Penalize putting Latias ex (2-prizer) in active spot
+                    intermediate_reward -= 1.5
                 elif played_card_id == 140:
+                    # Penalize putting Fezandipiti ex (2-prizer) in active spot
                     intermediate_reward -= 2.0
                 elif played_card_id in {115, 224, 880, 183, 1071}:
                     intermediate_reward -= 1.5
