@@ -94,8 +94,22 @@ def train_model():
                 return progress_remaining * initial_value
             return func
             
-        model_path = os.path.join(base_save_dir, "best_models", "best_model.zip")
-        if os.path.exists(model_path):
+        # Rutas comunes donde el usuario podría haber subido o guardado el best_model.zip
+        model_paths_to_check = [
+            os.path.join(base_save_dir, "best_models", "best_model.zip"), # Ruta generada automáticamente
+            os.path.join(base_save_dir, "best_model.zip"),                # Raíz del drive/working
+            "best_model.zip",                                             # Directorio actual (notebook)
+            "/kaggle/working/best_model.zip",                             # Kaggle working root
+            "/kaggle/input/pokemon-best-model/best_model.zip"             # Posible dataset de Kaggle
+        ]
+        
+        model_path = None
+        for path in model_paths_to_check:
+            if os.path.exists(path):
+                model_path = path
+                break
+
+        if model_path:
             print(f"🔄 Cargando modelo existente desde {model_path} (Fine-Tuning)")
             model = MaskablePPO.load(model_path, env=env, tensorboard_log=tensorboard_dir)
             
