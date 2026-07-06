@@ -287,11 +287,17 @@ def vectorize_state(obs_dict, my_index):
                     en_cards = target.get('energyCards', []) if isinstance(target, dict) else getattr(target, 'energyCards', [])
                     target_id = target.get('id', -1) if isinstance(target, dict) else getattr(target, 'id', -1)
                     target_id = (target_id + 1) if target_id != -1 else 0
-                    
-                    # Slowking/Slowpoke usually needs 3 max, Latias needs 1 max. Let's set a hard cap of 3.
-                    max_energy = 3
-                    if target_id == 184: max_energy = 1 # Latias ex
-                    elif target_id == 144: max_energy = 3 # Kyurem
+                    # Synergy Masking - Hard constraints on who can receive energy
+                    # 162: Slowpoke, 163: Slowking (Primary)
+                    # 756: Kangaskhan, 272: Clefairy (Secondary)
+                    # 184: Latias ex (Pivot, needs 1 energy for combo)
+                    if target_id in {162, 163, 756, 272}:
+                        max_energy = 3
+                    elif target_id == 184:
+                        max_energy = 1
+                    else:
+                        # Block energy on Bidoof, Bibarel, Fezandipiti, Kyurem, etc.
+                        max_energy = 0
                     
                     if len(en_cards) >= max_energy:
                         is_valid_synergy = False
