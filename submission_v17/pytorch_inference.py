@@ -48,14 +48,16 @@ def load_agent(model_path="policy.pth"):
     inference_state_dict = {}
     inference_state_dict['embedding.weight'] = state_dict['features_extractor.embedding.weight']
     
-    inference_state_dict['policy_net.0.weight'] = state_dict['mlp_extractor.policy_net.0.weight']
-    inference_state_dict['policy_net.0.bias'] = state_dict['mlp_extractor.policy_net.0.bias']
-    
-    inference_state_dict['policy_net.2.weight'] = state_dict['mlp_extractor.policy_net.2.weight']
-    inference_state_dict['policy_net.2.bias'] = state_dict['mlp_extractor.policy_net.2.bias']
-    
-    inference_state_dict['policy_net.4.weight'] = state_dict['mlp_extractor.policy_net.4.weight']
-    inference_state_dict['policy_net.4.bias'] = state_dict['mlp_extractor.policy_net.4.bias']
+    # MLP Policy
+    for i in [0, 2, 4]:
+        if f'mlp_extractor.policy_net.{i}.weight' in state_dict:
+            inference_state_dict[f'policy_net.{i}.weight'] = state_dict[f'mlp_extractor.policy_net.{i}.weight']
+            inference_state_dict[f'policy_net.{i}.bias'] = state_dict[f'mlp_extractor.policy_net.{i}.bias']
+        elif f'mlp_extractor.shared_net.{i}.weight' in state_dict:
+            inference_state_dict[f'policy_net.{i}.weight'] = state_dict[f'mlp_extractor.shared_net.{i}.weight']
+            inference_state_dict[f'policy_net.{i}.bias'] = state_dict[f'mlp_extractor.shared_net.{i}.bias']
+        else:
+            raise KeyError(f"Could not find policy weights for layer {i} in state_dict")
     
     inference_state_dict['action_net.weight'] = state_dict['action_net.weight']
     inference_state_dict['action_net.bias'] = state_dict['action_net.bias']
